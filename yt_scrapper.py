@@ -139,7 +139,7 @@ def fetch_and_analyze_charts():
             except ValueError:
                 days_old = 365
 
-            velocity_score = weekly_views / days_old
+            velocity_score = weekly_views
 
             candidates.append({
                 'title': raw_title,
@@ -184,7 +184,7 @@ if __name__ == "__main__":
     
     if winner_data:
         # 3. Generate Timestamped Filename
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         filename = f"trackinfo_{timestamp}.json"
         file_path = os.path.join(LOG_FOLDER, filename)
         
