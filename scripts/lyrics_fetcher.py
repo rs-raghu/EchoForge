@@ -5,9 +5,10 @@ import glob
 from datetime import datetime
 import lyricsgenius
 from anyascii import anyascii
+import db_manager
 
 # --- CONFIGURATION ---
-GENIUS_ACCESS_TOKEN = "A3_0t0cObi9eLcPYkX7mAoSmiabeBrxYaF0n-n9P5hXcczXG3ncRWLio7Z4LiE9E" # ⚠️ Keep your token here
+GENIUS_ACCESS_TOKEN = "A3_0t0cObi9eLcPYkX7mAoSmiabeBrxYaF0n-n9P5hXcczXG3ncRWLio7Z4LiE9E" 
 genius = lyricsgenius.Genius(GENIUS_ACCESS_TOKEN)
 genius.remove_section_headers = True
 genius.verbose = False 
@@ -79,7 +80,7 @@ def fetch_lyrics(title, artist, output_folder):
             lyrics_path = os.path.join(output_folder, "lyrics.txt")
             with open(lyrics_path, 'w', encoding='utf-8') as f:
                 f.write(final_romanized_text)
-                
+            db_manager.insert_new_job(winner['video_id'], winner['title'], winner['artist'], status="LYRICS_FETCHED")  
             print(f"   💾 Saved Romanized lyrics to: {lyrics_path}")
             return lyrics_path
         else:
