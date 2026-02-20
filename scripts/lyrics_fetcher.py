@@ -4,108 +4,119 @@ import json
 import glob
 from datetime import datetime
 import lyricsgenius
+from anyascii import anyascii
 
 # --- CONFIGURATION ---
-GENIUS_ACCESS_TOKEN = "A3_0t0cObi9eLcPYkX7mAoSmiabeBrxYaF0n-n9P5hXcczXG3ncRWLio7Z4LiE9E" 
+GENIUS_ACCESS_TOKEN = "A3_0t0cObi9eLcPYkX7mAoSmiabeBrxYaF0n-n9P5hXcczXG3ncRWLio7Z4LiE9E" # ⚠️ Keep your token here
 genius = lyricsgenius.Genius(GENIUS_ACCESS_TOKEN)
-
-# Keep the terminal clean from Genius's default debug logs
+genius.remove_section_headers = True
 genius.verbose = False 
 genius.remove_dict = True 
 
 def clean_lyrics_text(raw_lyrics):
     """
-    Heuristic filter to clean the messy text returned by the Genius API.
-    Removes headers, view counts, and weird prefixes.
+    Heuristic filter to clean the messy text returned by the Genius API,
+    including rebuilding fragmented sentences and broken syllables.
     """
-    # 1. Genius often returns the first line as "Song Title Lyrics[Verse 1]". 
-    # This removes everything up to and including the word "Lyrics" on the first line.
+    # 1. Standard Genius cleanup
     clean_text = re.sub(r'^.*Lyrics', '', raw_lyrics, count=1)
-    
-    # 2. Remove the view count noise at the very end (e.g., "12KEmbed", "1.2MEmbed" or just "Embed")
     clean_text = re.sub(r'\d*(\.\d+)?K?M?Embed$', '', clean_text)
     clean_text = re.sub(r'Embed$', '', clean_text)
-    
-    # 3. Remove all section headers like [Chorus], [Verse 1], [Outro]
     clean_text = re.sub(r'\[.*?\]', '', clean_text)
     
-    # 4. Clean up the empty blank lines left behind by the deleted headers
-    # This rebuilds the string keeping only lines that actually contain text
+    # 2. THE SENTENCE REBUILDER (Fixes broken K-Pop formatting)
+    # Fixes ad-libs broken across multiple lines: "(\nAh\n)" -> "(Ah)"
+    clean_text = re.sub(r'\(\s*\n\s*', '(', clean_text)
+    clean_text = re.sub(r'\s*\n\s*\)', ')', clean_text)
+    
+    # Glues lowercase fragments to the previous line: "Eo\nduwojin" -> "Eoduwojin"
+    clean_text = re.sub(r'\n\s*([a-z])', r'\1', clean_text)
+    
+    # Removes double spaces created by gluing words together
+    clean_text = re.sub(r' +', ' ', clean_text)
+    
+    # 3. Final polish (remove blank lines)
     clean_text = "\n".join([line.strip() for line in clean_text.splitlines() if line.strip()])
     
     return clean_text
 
 def fetch_lyrics(title, artist, output_folder):
     """
-    Searches Genius for the song, cleans the formatting, 
-    and saves the official lyrics to a text file.
+    Uses a Waterfall Search to guarantee romanized (English alphabet) lyrics.
     """
-    print(f"📝 Searching Genius for: '{title}' by {artist}...")
+    print(f"\n📝 Fetching lyrics for: '{title}' by {artist}...")
     
     try:
-        # Search Genius using the Title and Artist
-        song = genius.search_song(title, artist)
+        song = None
         
+        # --- STAGE 1: THE GENIUS HACK ---
+        # We explicitly ask Genius if a fan-made "Romanized" version exists.
+        print("   🔍 Searching for official Romanized version...")
+        romanized_query = f"{title} Romanized"
+        song = genius.search_song(romanized_query, artist)
+        
+        # --- STAGE 2: THE STANDARD FALLBACK ---
+        # If no romanized version exists (e.g. it's already an English song), search normally.
+        if not song:
+            print("   ⚠️ No Romanized page found. Searching original title...")
+            song = genius.search_song(title, artist)
+            
         if song and song.lyrics:
-            print("✅ Official lyrics found! Cleaning formatting...")
+            print("   ✅ Lyrics found! Cleaning formatting...")
             
-            # Pass the raw lyrics through our custom cleaning function
-            cleaned = clean_lyrics_text(song.lyrics)
+            # Clean the Genius formatting [Chorus], Embed numbers, etc.
+            cleaned_text = clean_lyrics_text(song.lyrics)
             
-            # Ensure the output folder exists (just in case)
+            # --- STAGE 3: THE BRUTE-FORCE FALLBACK ---
+            # We pass the clean text through anyascii. 
+            # - If it's English (Espresso), it does absolutely nothing.
+            # - If it's Korean (안녕하세요), it forces it to "annyeonghaseyo".
+            # - If it's Spanish (Corazón), it safely changes it to "Corazon".
+            final_romanized_text = anyascii(cleaned_text)
+            
             os.makedirs(output_folder, exist_ok=True)
             
-            # Save the pristine lyrics to the folder
             lyrics_path = os.path.join(output_folder, "lyrics.txt")
             with open(lyrics_path, 'w', encoding='utf-8') as f:
-                f.write(cleaned)
+                f.write(final_romanized_text)
                 
-            print(f"💾 Saved clean lyrics to: {lyrics_path}")
+            print(f"   💾 Saved Romanized lyrics to: {lyrics_path}")
             return lyrics_path
         else:
-            print("❌ Lyrics not found on Genius.")
+            print("   ❌ Lyrics not found on Genius.")
             return None
             
     except Exception as e:
-        print(f"❌ Error communicating with Genius API: {e}")
+        print(f"   ❌ Error communicating with Genius API: {e}")
         return None
 
 if __name__ == "__main__":
     # ==========================================
-    # STANDALONE TEST: Read Top Song & Fetch Lyrics
+    # STANDALONE TEST
     # ==========================================
     print("🔍 Looking for the latest YouTube Charts JSON...")
     
     json_folder = os.path.join("Database", "JSON")
-    
-    # Use glob to find all .json files in our database directory
     json_files = glob.glob(os.path.join(json_folder, "*.json"))
     
     if not json_files:
-        print("❌ No JSON files found in Database/JSON/. Run your yt_scrapper.py first!")
+        print("❌ No JSON files found in Database/JSON/.")
     else:
-        # Find the most recently created JSON file
         latest_file = max(json_files, key=os.path.getctime)
-        print(f"📄 Reading top song from: {latest_file}\n")
         
-        # Open it and grab the #1 song
         with open(latest_file, 'r', encoding='utf-8') as f:
             songs_data = json.load(f)
             
         if songs_data:
             top_song = songs_data[0]
-            test_title = top_song['title']
-            test_artist = top_song['artist']
             
-            # --- CREATE THE ASSETS FOLDER STRUCTURE ---
+            # Forcing a K-Pop test to prove the engine works!
+            # Change this back to top_song['title'] after testing.
+            test_title = "Khairiyat" 
+            test_artist = "Arijit Singh"
+            
             today_date = datetime.now().strftime("%Y-%m-%d")
-            # Strip illegal characters for folder creation
             safe_title = re.sub(r'[\\/*?:"<>|]', "", test_title).strip()
+            workspace_dir = os.path.join("Assets", f"{today_date}-{safe_title}")
             
-            folder_name = f"{today_date}-{safe_title}"
-            workspace_dir = os.path.join("Assets", folder_name)
-            
-            # Fetch and save directly into the new workspace
             fetch_lyrics(test_title, test_artist, output_folder=workspace_dir)
-        else:
-            print("❌ The JSON file is empty.")
