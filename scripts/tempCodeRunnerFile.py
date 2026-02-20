@@ -1,2 +1,1 @@
-        
-        # Quick preview of the #1 song
+print(f"❌ Error fetching page: {e}")
