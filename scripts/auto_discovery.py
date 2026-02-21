@@ -4,9 +4,10 @@ import re
 from datetime import datetime
 import yt_dlp
 
-# Import our custom modules
+# --- CUSTOM MODULES ---
 from yt_scrapper import scrape_top_50
 import db_manager
+from lyrics_fetcher import fetch_lyrics
 
 # --- CONFIGURATION ---
 ASSETS_DIR = "Assets"
@@ -14,8 +15,18 @@ ASSETS_DIR = "Assets"
 # ==========================================
 # 1. AUDIO FORGE (yt-dlp)
 # ==========================================
-def download_audio(youtube_url, output_folder, filename="audio"):
-    """Downloads the MP3 directly into the specific Asset folder."""
+def download_audio(youtube_url: str, output_folder: str, filename: str = "audio"):
+    """
+    Downloads the highest quality audio stream directly into the target folder.
+    
+    Args:
+        youtube_url (str): The target YouTube video URL.
+        output_folder (str): The directory to save the mp3.
+        filename (str): The base name for the output file.
+        
+    Returns:
+        str | None: The absolute path to the downloaded .mp3, or None if failed.
+    """
     print(f"\n🎵 Downloading audio from: {youtube_url}")
     
     ydl_opts = {
@@ -42,36 +53,49 @@ def download_audio(youtube_url, output_folder, filename="audio"):
 # ==========================================
 # 2. HELPER FUNCTIONS
 # ==========================================
-def clean_folder_name(name):
-    """Removes illegal characters (\ / : * ? " < > |) for safe folder creation."""
+def clean_folder_name(name: str):
+    """
+    Sanitizes strings by removing OS-illegal characters for safe folder creation.
+    """
     return re.sub(r'[\\/*?:"<>|]', "", name).strip()
 
 # ==========================================
 # 3. THE MASTER PIPELINE
 # ==========================================
 def run_discovery_pipeline():
+    """
+    Executes the first phase of the EchoForge automation pipeline:
+    1. Initializes DB.
+    2. Scrapes Top 50 Charts.
+    3. Identifies the highest-ranking unprocessed song.
+    4. Downloads the MP3 audio.
+    5. Fetches and sanitizes the official Romanized lyrics.
+    6. Logs the job to the database.
+    """
     print("🚀 STARTING ECHOFORGE DISCOVERY PIPELINE 🚀")
     
     # Step A: Ensure DB is ready
     db_manager.init_db()
     
     # Step B: Fetch the freshest data from YouTube Charts
-    print("\n[1/4] Fetching Live Charts...")
+    print("\n[1/5] Fetching Live Charts...")
     top_50 = scrape_top_50()
     
     if not top_50:
         print("❌ Pipeline halted: Could not retrieve charts.")
         return
         
-    print("\n[2/4] Analyzing Database for Winner...")
+    print("\n[2/5] Analyzing Database for Winner...")
     winner = None
+    
+    # Define statuses that indicate a song is already being (or has been) processed
+    active_statuses = ["AUDIO_DOWNLOADED", "LYRICS_FETCHED", "ASSETS_READY", "VIDEO_CREATED", "UPLOADED"]
     
     # Step C: Find the #1 song that is NOT currently in the pipeline
     for song in top_50:
         current_status = db_manager.get_song_status(song['video_id'])
         
-        # If it has any of these statuses, we skip it and look at the next song
-        if current_status in ["AUDIO_DOWNLOADED", "VIDEO_CREATED", "UPLOADED"]:
+        if current_status in active_statuses:
             print(f"   ⏭️ Skipping '{song['title']}' (Status: {current_status})")
         else:
             winner = song
@@ -83,8 +107,8 @@ def run_discovery_pipeline():
         
     print(f"\n🏆 WINNER SELECTED: {winner['title']} by {winner['artist']}")
     
-    # Step D: Create the specific Asset Folder (e.g., "Assets/2026-02-20-Espresso")
-    print("\n[3/4] Creating Asset Workspace...")
+    # Step D: Create the specific Asset Folder
+    print("\n[3/5] Creating Asset Workspace...")
     today_date = datetime.now().strftime("%Y-%m-%d")
     safe_title = clean_folder_name(winner['title'])
     
@@ -95,23 +119,32 @@ def run_discovery_pipeline():
     print(f"📁 Workspace created at: {workspace_dir}")
     
     # Step E: Download the Audio
-    print("\n[4/4] Extracting Audio...")
+    print("\n[4/5] Extracting Audio...")
     audio_path = download_audio(winner['url'], workspace_dir, filename="audio")
     
     if audio_path:
-        # Step F: Add it to the Job Queue with its initial status
-        db_manager.insert_new_job(winner['video_id'], winner['title'], winner['artist'], status="AUDIO_DOWNLOADED")
+        # Step F: Fetch the Official Romanized Lyrics
+        print("\n[5/5] Fetching Official Lyrics...")
+        lyrics_path = fetch_lyrics(winner['title'], winner['artist'], workspace_dir)
         
-        # Save a mini-JSON file in the workspace so the video engine knows what text to render
+        # Determine the final database status for this phase
+        final_status = "LYRICS_FETCHED" if lyrics_path else "AUDIO_ONLY"
+        
+        # Step G: Lock it into the Job Queue
+        db_manager.insert_new_job(winner['video_id'], winner['title'], winner['artist'], status=final_status)
+        
+        # Save the metadata for the video engine to consume later
+        winner['status'] = final_status 
         metadata_path = os.path.join(workspace_dir, "metadata.json")
-        winner['status'] = "AUDIO_DOWNLOADED" # Inject status into the local metadata
         
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(winner, f, indent=4, ensure_ascii=False)
             
-        print("\n🎉 PIPELINE COMPLETE! 🎉")
-        print(f"🎵 Audio: {audio_path}")
-        print(f"📄 Metadata: {metadata_path}")
+        print("\n🎉 DISCOVERY PIPELINE COMPLETE! 🎉")
+        print(f"📁 Workspace: {workspace_dir}")
+        print(f"🎵 Audio: audio.mp3")
+        if lyrics_path:
+            print(f"📄 Lyrics: lyrics.txt")
     else:
         print("\n❌ Pipeline failed during audio extraction. Database not updated.")
 

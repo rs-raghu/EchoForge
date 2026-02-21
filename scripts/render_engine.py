@@ -2,7 +2,12 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import glob
+import re
 from datetime import datetime
+
+# --- CUSTOM MODULES ---
+import db_manager
 
 # --- CONFIGURATION ---
 DB_PATH = os.path.join("Database", "echoforge.db")
@@ -11,35 +16,36 @@ REACT_PUBLIC_DIR = os.path.join("video-engine", "public")
 OUTPUT_DIR = "Output"
 
 def get_ready_job():
-    """Finds the first song in the database that is ready to be rendered."""
+    """
+    Queries the database for the first available song that has its assets 
+    fully prepared by the Whisper sync engine.
+    """
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('SELECT video_id, title, artist FROM processed_songs WHERE status = ?', ('ASSETS_READY',))
-    job = cursor.fetchone()
-    conn.close()
-    return job
+    try:
+        cursor.execute('SELECT video_id, title, artist FROM processed_songs WHERE status = ?', ('ASSETS_READY',))
+        return cursor.fetchone()
+    finally:
+        conn.close()
 
-def update_status(video_id, new_status):
-    """Updates the job queue state."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE processed_songs 
-        SET status = ?, last_updated = ? 
-        WHERE video_id = ?
-    ''', (new_status, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), video_id))
-    conn.commit()
-    conn.close()
+def clean_folder_name(name: str):
+    """
+    Matches the EXACT regex used in auto_discovery.py to ensure 
+    folder names match perfectly across the pipeline.
+    """
+    return re.sub(r'[\\/*?:"<>|]', "", name).strip()
 
-def find_asset_folder(title):
-    """Locates the specific folder inside Assets/ based on the song title."""
-    import glob
-    # We look for any folder that ends with the sanitized title
-    safe_title = "".join([c for c in title if c.isalnum() or c in " -_"]).strip()
+def find_asset_folder(title: str):
+    """Locates the specific folder inside Assets/ based on the sanitized song title."""
+    safe_title = clean_folder_name(title)
     folders = glob.glob(os.path.join(ASSETS_DIR, f"*-{safe_title}*"))
     return folders[0] if folders else None
 
 def render_video():
+    """
+    The Master Visual Orchestrator.
+    Stages the data into the React engine and triggers the Remotion CLI.
+    """
     print("🎬 BOOTING RENDER ENGINE...")
     
     # 1. Check the Job Queue
@@ -68,35 +74,36 @@ def render_video():
         if os.path.exists(src):
             shutil.copy(src, dst)
         else:
-            print(f"❌ Missing critical file: {file}")
+            print(f"❌ Pipeline Halted: Missing critical file '{file}' in {asset_folder}")
             return
 
     # 4. Trigger the Remotion CLI
     print("   ⚙️ Triggering Remotion Renderer (This may take a minute)...")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     
-    # Create a clean filename for the final MP4
-    safe_title = "".join([c for c in title if c.isalnum() or c in " -_"]).strip()
+    safe_title = clean_folder_name(title)
     final_video_path = os.path.abspath(os.path.join(OUTPUT_DIR, f"{safe_title}.mp4"))
 
-    # We use subprocess to run the actual NPM command from Python!
     try:
-        # npx remotion render <composition_id> <output_file>
         command = [
             "npx", "remotion", "render", 
             "EchoForgeLyricVideo", 
             final_video_path
         ]
         
-        # Run the command from inside the video-engine folder
-        subprocess.run(command, cwd="video-engine", check=True)
+        # shell=True is highly recommended on Windows for npx/npm commands
+        use_shell = os.name == 'nt' 
         
-        # 5. Success! Update the database
+        subprocess.run(command, cwd="video-engine", check=True, shell=use_shell)
+        
+        # 5. Success! Route the update through our master DB Manager
         print(f"\n✅ SUCCESS! Video rendered to: {final_video_path}")
-        update_status(video_id, "VIDEO_CREATED")
+        db_manager.update_job_status(video_id, "VIDEO_CREATED")
         
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ Render failed: {e}")
+        print(f"\n❌ Render failed: The Remotion CLI encountered an error. {e}")
+    except Exception as e:
+        print(f"\n❌ Unexpected System Error: {e}")
 
 if __name__ == "__main__":
     render_video()

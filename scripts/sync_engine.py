@@ -1,24 +1,31 @@
 import os
-import stable_whisper
 import json
+import stable_whisper
 import db_manager
 
-def align_audio_and_text(audio_path, lyrics_path, output_folder):
+def align_audio_and_text(workspace_folder: str):
     """
     Uses Whisper AI to force-align a known text file to an audio file,
     generating precise word-level timestamps.
+    Reads metadata to update the database upon completion.
     """
     print("🧠 Booting up Whisper AI Alignment Engine...")
 
+    # 1. Define all paths based on the single workspace folder
     audio_path = os.path.join(workspace_folder, "audio.mp3")
     lyrics_path = os.path.join(workspace_folder, "lyrics.txt")
     metadata_path = os.path.join(workspace_folder, "metadata.json")
 
+    # Ensure all required files actually exist
     if not (os.path.exists(audio_path) and os.path.exists(lyrics_path) and os.path.exists(metadata_path)):
         print(f"❌ Error: Missing critical files in {workspace_folder}")
         return None
     
-    # 1. Read the pristine lyrics we fetched earlier
+    # 2. Load the metadata dictionary so we know which song we are working on
+    with open(metadata_path, 'r', encoding='utf-8') as f:
+        metadata = json.load(f)
+
+    # 3. Read the pristine lyrics
     with open(lyrics_path, 'r', encoding='utf-8') as f:
         target_text = f.read()
         
@@ -27,28 +34,29 @@ def align_audio_and_text(audio_path, lyrics_path, output_folder):
         return None
 
     try:
-        # 2. Load the lightweight "base" model 
-        # (Since we aren't transcribing from scratch, base is fast and highly accurate for alignment)
+        # Load the lightweight "base" model 
         model = stable_whisper.load_model('base')
+        print(f"⏱️ Aligning audio to text for: {metadata['title']}...")
         
-        print("⏱️ Aligning audio waveforms to text (This may take a minute depending on your CPU/GPU)...")
-        
-        # 3. Perform Forced Alignment
+        # Perform Forced Alignment
         result = model.align(audio_path, target_text, language='en')
         
-        # 4. Save the outputs!
-        # Save as standard SRT (Great for previewing in VLC player)
-        srt_path = os.path.join(output_folder, "subtitles.srt")
+        # 4. Save the outputs
+        srt_path = os.path.join(workspace_folder, "subtitles.srt")
         result.to_srt_vtt(srt_path, word_level=False) 
         
-        # Save as JSON (Crucial for our Remotion/React video engine later)
-        json_path = os.path.join(output_folder, "timestamps.json")
+        json_path = os.path.join(workspace_folder, "timestamps.json")
         result.save_as_json(json_path)
 
+        # 5. Lock in the new State Machine status
         db_manager.update_job_status(metadata['video_id'], "ASSETS_READY")
+        
+        # Save the updated status back to the local file for the React engine
         metadata['status'] = "ASSETS_READY"
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=4, ensure_ascii=False)
 
-        print(f"✅ Success! Alignment complete.")
+        print(f"\n✅ Success! Alignment complete. Status updated to ASSETS_READY.")
         print(f"💾 Saved SRT to: {srt_path}")
         print(f"💾 Saved JSON to: {json_path}")
         
@@ -72,15 +80,9 @@ if __name__ == "__main__":
     if not asset_folders:
         print("❌ No folders found in Assets/. Run auto_discovery.py first!")
     else:
-        # Grab the most recently modified folder (which should be the one we just made)
+        # Grab the most recently modified folder
         latest_workspace = max(asset_folders, key=os.path.getmtime)
         print(f"📂 Found workspace: {latest_workspace}")
         
-        audio_target = os.path.join(latest_workspace, "audio.mp3")
-        lyrics_target = os.path.join(latest_workspace, "lyrics.txt")
-        
-        # Check if the files actually exist before running
-        if os.path.exists(audio_target) and os.path.exists(lyrics_target):
-            align_audio_and_text(audio_target, lyrics_target, latest_workspace)
-        else:
-            print("❌ Missing audio.mp3 or lyrics.txt in the workspace.")
+        # Execute the alignment using just the folder path
+        align_audio_and_text(latest_workspace)
