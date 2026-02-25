@@ -67,14 +67,17 @@ def render_video():
     print("   📂 Staging assets into the visual engine...")
     os.makedirs(REACT_PUBLIC_DIR, exist_ok=True)
     
-    files_to_stage = ["audio.mp3", "timestamps.json", "metadata.json"]
-    for file in files_to_stage:
-        src = os.path.join(asset_folder, file)
-        dst = os.path.join(REACT_PUBLIC_DIR, file)
-        if os.path.exists(src):
-            shutil.copy(src, dst)
+    files_to_stage = ["audio.mp3", "timestamps.json", "metadata.json", "bg.jpg"]
+    for file_name in files_to_stage:
+        source = os.path.join(asset_folder, file_name) # FIXED: Changed to asset_folder
+        destination = os.path.join("video-engine", "public", file_name)
+        
+        if os.path.exists(source):
+            import shutil
+            shutil.copy(source, destination)
+            print(f"   📂 Staged: {file_name}")
         else:
-            print(f"❌ Pipeline Halted: Missing critical file '{file}' in {asset_folder}")
+            print(f"   ❌ Missing asset for render: {file_name}")
             return
 
     # 4. Trigger the Remotion CLI

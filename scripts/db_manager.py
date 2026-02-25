@@ -88,6 +88,15 @@ def update_job_status(video_id: str, new_status: str):
     conn.commit()
     conn.close()
 
+def get_total_video_count():
+    """Counts how many videos EchoForge has processed to calculate the background cycle."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM jobs")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
 if __name__ == "__main__":
     # ==========================================
     # STANDALONE EXECUTION

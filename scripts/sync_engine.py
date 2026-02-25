@@ -2,6 +2,7 @@ import os
 import json
 import stable_whisper
 import db_manager
+import re
 
 def align_audio_and_text(workspace_folder: str):
     """

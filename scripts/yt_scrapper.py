@@ -14,33 +14,29 @@ from selenium.webdriver.support import expected_conditions as EC
 def scrape_top_50():
     """
     Scrapes the top 50 songs from YouTube's Global Weekly Charts.
-    Uses a headless Chrome browser to render JavaScript-injected content
-    and BeautifulSoup to parse the resulting DOM.
-    
-    Returns:
-        list: A list of dictionaries containing track metadata.
     """
     print("🤖 Launching Headless Browser...")
 
-    # Stealth configuration to bypass YouTube's anti-bot detection
     chrome_options = Options()
     chrome_options.add_argument("--headless=new") 
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--log-level=3")
+    chrome_options.add_argument("--incognito") 
     
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    
+    # Back to the official weekly URL
     url = "https://charts.youtube.com/charts/TopSongs/global/weekly"
     
     try:
         print(f"🌍 Navigating to: {url}")
         driver.get(url)
         
-        # Await the rendering of YouTube's custom Polymer tags
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.TAG_NAME, "ytmc-entry-row"))
         )
-        time.sleep(2)  # Buffer for dynamic text injection
+        time.sleep(2)  
         
         html_content = driver.page_source
 
@@ -69,7 +65,6 @@ def scrape_top_50():
             if not title_div: continue
             raw_title = title_div.text.strip()
             
-            # Extract URL from the embedded JSON in the 'endpoint' attribute
             endpoint_json = title_div.get('endpoint')
             if not endpoint_json: continue
             
@@ -77,12 +72,10 @@ def scrape_top_50():
             url = data['urlEndpoint']['url']
             video_id = url.split('v=')[-1]
 
-            # Extract and aggregate multiple artist names
             artist_div = row.find(id="artist-names")
             artists = [span.text.strip() for span in artist_div.find_all(class_="artistName")]
             artist_string = " & ".join(artists)
 
-            # Weekly views are located in the 4th metric column (index 3)
             metrics = row.find_all(class_="metric")
             if len(metrics) < 4: continue
             
@@ -103,24 +96,22 @@ def scrape_top_50():
         except Exception:
             continue
 
+    if top_50_songs:
+        folder_path = os.path.join("Database", "JSON")
+        os.makedirs(folder_path, exist_ok=True)
+
+        today_date = datetime.now().strftime("%Y-%m-%d")
+        output_file = os.path.join(folder_path, f"{today_date}.json")
+
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(top_50_songs, f, indent=4, ensure_ascii=False)
+            
+        print(f"\n🎉 Success! Extracted {len(top_50_songs)} songs.")
+        print(f"💾 Saved to: {output_file}")
+    else:
+        print("\n❌ Failed to extract any songs.")
+
     return top_50_songs
 
 if __name__ == "__main__":
     songs_data = scrape_top_50()
-    
-    if songs_data:
-        # Setup output directory and dynamic filepath
-        folder_path = os.path.join("Database", "JSON")
-        os.makedirs(folder_path, exist_ok=True)
-        
-        today_date = datetime.now().strftime("%d-%m-%Y")
-        output_file = os.path.join(folder_path, f"{today_date}.json")
-        
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(songs_data, f, indent=4, ensure_ascii=False)
-            
-        print(f"\n🎉 Success! Extracted {len(songs_data)} songs.")
-        print(f"💾 Saved to: {output_file}")
-        print(f"\n🏆 #1 CURRENT SONG: {songs_data[0]['title']} by {songs_data[0]['artist']} ({songs_data[0]['weekly_views']:,} views)")
-    else:
-        print("\n❌ Failed to extract any songs.")
