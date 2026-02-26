@@ -1,90 +1,134 @@
 import os
-import sqlite3
-import glob
-import re
-from datetime import datetime
-
-# --- IMPORT OUR MICROSERVICES ---
 import db_manager
-import auto_discovery
-import sync_engine
-import render_engine
+import song_fetch
+import lyrics_fetcher
+import lyrics_sync
+from song_fetch import UNAVAILABLE
+from timestamp_processor import process_timestamps
 
-# --- CONFIGURATION ---
-DB_PATH = os.path.join("Database", "echoforge.db")
-ASSETS_DIR = "Assets"
 
-def clean_folder_name(name: str):
-    """Sanitizes folder names to match the exact regex across the system."""
-    return re.sub(r'[\\/*?:"<>|]', "", name).strip()
+def run_pipeline(song_data):
+    """
+    Stateful orchestrator. Resumes from the last completed step using the database.
 
-def get_job_by_status(status: str):
-    """Queries the database for a song waiting in a specific state."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    Status flow:
+    PENDING → AUDIO_FETCHED → LYRICS_FETCHED → LYRICS_SYNCED → ASSETS_READY
+                            ↘ LYRICS_READY (if SYNCED .lrc) → ASSETS_READY
+    """
+    workspace = song_data.get('workspace_dir')
+    title     = song_data.get('title')
+    artist    = song_data.get('artist')
+    url       = song_data.get('url')
+    video_id  = song_data.get('video_id')
+
+    print(f"\n⚙️ MASTER CONTROLLER TAKING OVER: {title}")
+    print(f"📂 Workspace: {workspace}")
+
     try:
-        cursor.execute('SELECT video_id, title, artist FROM processed_songs WHERE status = ?', (status,))
-        return cursor.fetchone()
-    finally:
-        conn.close()
+        db_manager.init_db()
+        current_status = db_manager.get_song_status(video_id)
 
-def find_asset_folder(title: str):
-    """Locates the workspace folder for a specific song."""
-    safe_title = clean_folder_name(title)
-    folders = glob.glob(os.path.join(ASSETS_DIR, f"*-{safe_title}*"))
-    return folders[0] if folders else None
+        # Already finished
+        if current_status in ["ASSETS_READY", "VIDEO_CREATED", "UPLOADED", "COMPLETED"]:
+            print(f"✅ Pipeline already finished for '{title}' (Status: {current_status}). Aborting.")
+            return True
 
-def run_echoforge_cycle():
-    """Executes one complete waterfall cycle of the EchoForge pipeline."""
-    print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 🤖 WAKING UP ECHOFORGE MASTER CONTROLLER...")
-    
-    # ---------------------------------------------------------
-    # PHASE 1: DISCOVERY & ACQUISITION
-    # ---------------------------------------------------------
-    print("\n=======================================")
-    print("PHASE 1: DISCOVERY & DOWNLOAD")
-    print("=======================================")
-    auto_discovery.run_discovery_pipeline()
-
-    # ---------------------------------------------------------
-    # PHASE 2: WHISPER ALIGNMENT
-    # ---------------------------------------------------------
-    print("\n=======================================")
-    print("PHASE 2: WHISPER ALIGNMENT")
-    print("=======================================")
-    # Look for the baton passed by auto_discovery (LYRICS_FETCHED)
-    sync_job = get_job_by_status("LYRICS_FETCHED")
-    
-    if sync_job:
-        video_id, title, artist = sync_job
-        folder = find_asset_folder(title)
-        if folder:
-            sync_engine.align_audio_and_text(folder)
+        # New song
+        if not current_status:
+            print("\n[+] New song detected. Initializing in Database...")
+            db_manager.insert_new_job(video_id, title, artist, status="PENDING")
+            current_status = "PENDING"
         else:
-            print(f"❌ Master Error: Could not find workspace folder for {title}")
-    else:
-        print("💤 No songs currently waiting for Whisper synchronization.")
+            print(f"\n[*] Resuming pipeline from status: {current_status}")
 
-    # ---------------------------------------------------------
-    # PHASE 3: VISUAL RENDERING
-    # ---------------------------------------------------------
-    print("\n=======================================")
-    print("PHASE 3: REMOTION RENDER")
-    print("=======================================")
-    # render_engine already has its own internal state-checking logic for ASSETS_READY!
-    render_engine.render_video()
+        # ==========================================
+        # PHASE 1: AUDIO FETCH
+        # ==========================================
+        if current_status == "PENDING":
+            print("\n[1/4] Triggering Audio Download...")
+            audio_path = song_fetch.download_audio(url, workspace)
 
-    print("\n=======================================")
-    print("🏁 DAILY PIPELINE CYCLE COMPLETE 🏁")
-    print("=======================================")
+            if audio_path == UNAVAILABLE:
+                db_manager.update_song_status(video_id, "UNAVAILABLE")
+                print(f"⛔ Marked as UNAVAILABLE. Signalling Telegram to skip to next song.")
+                return "UNAVAILABLE"
 
-if __name__ == "__main__":
-    # Ensure the DB exists before starting
-    db_manager.init_db()
-    
-    print("🔥 ECHOFORGE DAILY RUN INITIATED 🔥")
-    
-    # Run the assembly line exactly once
-    run_echoforge_cycle()
-    
-    print("\n✅ Script finished successfully. Shutting down.")
+            if not audio_path:
+                print("❌ Pipeline aborted: Audio download failed.")
+                return False
+
+            db_manager.update_song_status(video_id, "AUDIO_FETCHED")
+            current_status = "AUDIO_FETCHED"
+
+        # ==========================================
+        # PHASE 2: LYRICS FETCH
+        # ==========================================
+        if current_status == "AUDIO_FETCHED":
+            print("\n[2/4] Triggering Multi-Tier Lyrics Fetcher...")
+
+            lyric_status, lyric_path = lyrics_fetcher.fetch_lyrics(title, artist, workspace)
+
+            if lyric_status == "SYNCED":
+                # Pre-synced .lrc from syncedlyrics — still need timestamps.json
+                db_manager.update_song_status(video_id, "LYRICS_READY")
+                current_status = "LYRICS_READY"
+
+            elif lyric_status == "PLAIN":
+                db_manager.update_song_status(video_id, "LYRICS_FETCHED")
+                current_status = "LYRICS_FETCHED"
+
+            else:
+                print("❌ Lyrics fetch failed. Telegram intervention required.")
+                return "NEEDS_MANUAL_LYRICS"
+
+        # ==========================================
+        # PHASE 2.5: SYNC ENGINE (PLAIN lyrics only)
+        # Handles both: auto PLAIN result and manual .txt upload resume
+        # ==========================================
+        if current_status == "LYRICS_FETCHED":
+            print("\n[2.5/4] Plain text lyrics detected. Running Sync Engine...")
+            audio_file = os.path.join(workspace, "audio.mp3")
+            txt_file   = os.path.join(workspace, "lyrics.txt")
+
+            synced_path = lyrics_sync.sync_lyrics(audio_file, txt_file, workspace)
+
+            if synced_path:
+                db_manager.update_song_status(video_id, "ASSETS_READY")
+                current_status = "ASSETS_READY"
+            else:
+                print("❌ Sync Engine failed. Telegram intervention required.")
+                return "NEEDS_MANUAL_LYRICS"
+
+        # ==========================================
+        # PHASE 2.6: TIMESTAMPS (SYNCED lyrics path)
+        # Pre-synced .lrc has timestamps but no word-level data.
+        # We convert the LRC directly into timestamps.json so the
+        # renderer has what it needs.
+        # ==========================================
+        if current_status == "LYRICS_READY":
+            print("\n[2.6/4] Pre-synced LRC detected. Generating timestamps.json...")
+            ts_path = process_timestamps(workspace)
+            if ts_path:
+                db_manager.update_song_status(video_id, "ASSETS_READY")
+                current_status = "ASSETS_READY"
+            else:
+                print("⚠️ Timestamp processing failed. Check lyrics.lrc content.")
+                # Non-fatal: the renderer may still work with LRC alone
+                db_manager.update_song_status(video_id, "ASSETS_READY")
+                current_status = "ASSETS_READY"
+
+        # ==========================================
+        # PHASE 3: IMAGE / BACKGROUND GENERATION
+        # ==========================================
+        if current_status == "ASSETS_READY":
+            print("\n[3/4] Assets ready. Image Engine placeholder — coming next.")
+            # image_engine.generate_assets(workspace, metadata)
+
+        print(f"\n🎉 Master Controller reached {current_status} for '{title}'!")
+        return True
+
+    except Exception as e:
+        print(f"❌ Master Controller crashed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False

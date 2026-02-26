@@ -1,106 +1,135 @@
 import sqlite3
 import os
+import threading
 from datetime import datetime
 
-# --- CONFIGURATION ---
-DB_DIR = "Database"
+# ---------------------------------------------------------------------------
+# CONFIGURATION
+# ---------------------------------------------------------------------------
+_HERE   = os.path.dirname(os.path.abspath(__file__))
+DB_DIR  = os.path.normpath(os.path.join(_HERE, "..", "Database"))
 DB_PATH = os.path.join(DB_DIR, "echoforge.db")
+
+# ---------------------------------------------------------------------------
+# ONE LOCK FOR ALL DB OPERATIONS
+#
+# SQLite raises two different error codes:
+#   SQLITE_BUSY   (5)  → another OS process holds a file lock   → timeout helps
+#   SQLITE_LOCKED (6)  → write conflict inside the same process → timeout does NOT help
+#
+# asyncio.to_thread() spawns real OS threads.  When two threads call
+# update_song_status() at the same time both open separate connections and
+# race to write → SQLITE_LOCKED.  A single threading.Lock serialises every
+# read/write so only one thread touches the DB at a time, eliminating the race
+# entirely without needing a persistent connection pool.
+# ---------------------------------------------------------------------------
+_DB_LOCK      = threading.Lock()
+_initialized  = False
+
+
+def _get_conn() -> sqlite3.Connection:
+    """Open a short-lived connection. check_same_thread=False is required
+    because connections are created inside asyncio worker threads."""
+    return sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+
+
+# ---------------------------------------------------------------------------
+# INIT
+# ---------------------------------------------------------------------------
 
 def init_db():
     """
-    Creates the SQLite job queue database and table.
-    Safe to run multiple times; 'IF NOT EXISTS' prevents data erasure.
+    Create the DB directory + table and enable WAL mode — but only once.
+    Every subsequent call (from any thread) is a no-op via double-checked locking.
     """
-    os.makedirs(DB_DIR, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS processed_songs (
-            video_id TEXT PRIMARY KEY,
-            title TEXT,
-            artist TEXT,
-            status TEXT,
-            last_updated TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    global _initialized
+    if _initialized:
+        return
 
-def get_song_status(video_id: str):
-    """
-    Checks if a song is currently in the database.
-    
-    Args:
-        video_id (str): The unique YouTube video ID.
-        
-    Returns:
-        str | None: Its status (e.g., 'UPLOADED', 'AUDIO_DOWNLOADED'), 
-                    or None if it doesn't exist in the system yet.
-    """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('SELECT status FROM processed_songs WHERE video_id = ?', (video_id,))
-    result = cursor.fetchone()
-    conn.close()
-    
-    if result:
-        return result[0] 
-    return None
+    with _DB_LOCK:
+        if _initialized:          # another thread may have finished while we waited
+            return
 
-def insert_new_job(video_id: str, title: str, artist: str, status: str = "AUDIO_DOWNLOADED"):
-    """
-    Adds a newly discovered song to the pipeline.
-    Catches IntegrityErrors to prevent crashing if a duplicate is accidentally sent.
-    """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    try:
+        os.makedirs(DB_DIR, exist_ok=True)
+        conn   = _get_conn()
+        cursor = conn.cursor()
+
+        # WAL: readers never block writers, writers never block readers.
+        # Wrapped in try/except — harmless if already set or another process
+        # holds a brief lock on the file at startup.
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL;")
+        except sqlite3.OperationalError as e:
+            print(f"⚠️  WAL pragma skipped (non-fatal): {e}")
+
         cursor.execute('''
-            INSERT INTO processed_songs (video_id, title, artist, status, last_updated)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (video_id, title, artist, status, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            CREATE TABLE IF NOT EXISTS pipeline_jobs (
+                video_id     TEXT PRIMARY KEY,
+                title        TEXT,
+                artist       TEXT,
+                status       TEXT,
+                last_updated TEXT
+            )
+        ''')
         conn.commit()
-        print(f"💾 Logged to DB: [{status}] {title} by {artist}")
-    except sqlite3.IntegrityError:
-        print(f"⚠️ Warning: '{title}' is already in the database! Skipping insert.")
-    finally:
         conn.close()
 
-def update_job_status(video_id: str, new_status: str):
-    """
-    Updates the status of an existing song as it moves through the pipeline.
-    """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE processed_songs 
-        SET status = ?, last_updated = ? 
-        WHERE video_id = ?
-    ''', (new_status, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), video_id))
-    
-    # Check if the update actually found a row to change!
-    if cursor.rowcount == 0:
-        print(f"⚠️ Warning: Tried to update status to [{new_status}], but video ID '{video_id}' was not found in DB.")
-    else:
-        print(f"🔄 DB Status updated to: [{new_status}] for video {video_id}")
-        
-    conn.commit()
-    conn.close()
+        _initialized = True
+        print("✅ Database initialised.")
 
-def get_total_video_count():
-    """Counts how many videos EchoForge has processed to calculate the background cycle."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM jobs")
-    count = cursor.fetchone()[0]
-    conn.close()
-    return count
 
-if __name__ == "__main__":
-    # ==========================================
-    # STANDALONE EXECUTION
-    # ==========================================
-    # Running this file directly just initializes the database safely.
-    init_db()
-    print(f"🗄️ Database initialized and verified at: {DB_PATH}")
+# ---------------------------------------------------------------------------
+# PUBLIC API  (every function acquires _DB_LOCK before touching the file)
+# ---------------------------------------------------------------------------
+
+def get_song_status(video_id: str):
+    """Return the current pipeline status string, or None if not in DB."""
+    with _DB_LOCK:
+        conn   = _get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT status FROM pipeline_jobs WHERE video_id = ?', (video_id,)
+        )
+        result = cursor.fetchone()
+        conn.close()
+    return result[0] if result else None
+
+
+def insert_new_job(video_id: str, title: str, artist: str, status: str):
+    """Insert a new song row (or replace if video_id already exists)."""
+    with _DB_LOCK:
+        conn   = _get_conn()
+        cursor = conn.cursor()
+        now    = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute('''
+            INSERT OR REPLACE INTO pipeline_jobs
+                (video_id, title, artist, status, last_updated)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (video_id, title, artist, status, now))
+        conn.commit()
+        conn.close()
+
+def get_total_video_count() -> int:
+    with _DB_LOCK:
+        conn = _get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM pipeline_jobs WHERE status IN ('VIDEO_CREATED', 'UPLOADED')")
+        result = cursor.fetchone()
+        conn.close()
+    return result[0] if result else 0
+
+
+def update_song_status(video_id: str, status: str):
+    """Advance a song to the next pipeline status."""
+    with _DB_LOCK:
+        conn   = _get_conn()
+        cursor = conn.cursor()
+        now    = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute('''
+            UPDATE pipeline_jobs
+            SET    status = ?, last_updated = ?
+            WHERE  video_id = ?
+        ''', (status, now, video_id))
+        conn.commit()
+        conn.close()
+    print(f"✅ DB status updated → {status}")
