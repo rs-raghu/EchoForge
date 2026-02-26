@@ -1,0 +1,13 @@
+# API Keys and Secrets (CRITICAL)
+.env
+scripts/client_secrets.json
+scripts/token.json
+
+# Project Data & Outputs
+Assets/
+Output/
+Database/
+
+# Python Auto-Generated Files
+__pycache__/
+*.pyc
