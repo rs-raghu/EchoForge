@@ -1,9 +1,11 @@
 import os
+import re
 import db_manager
 import song_fetch
 import lyrics_fetcher
 import lyrics_sync
-import render_engine
+import render_engine          # FIX 1a: was missing
+import youtube_uploader       # FIX 1b: was missing
 from song_fetch import UNAVAILABLE
 from timestamp_processor import process_timestamps
 
@@ -13,8 +15,8 @@ def run_pipeline(song_data):
     Stateful orchestrator. Resumes from the last completed step using the database.
 
     Status flow:
-    PENDING → AUDIO_FETCHED → LYRICS_FETCHED → LYRICS_SYNCED → ASSETS_READY → VIDEO_CREATED
-                            ↘ LYRICS_READY (if SYNCED .lrc) → ASSETS_READY → VIDEO_CREATED
+    PENDING → AUDIO_FETCHED → LYRICS_FETCHED → ASSETS_READY → VIDEO_CREATED → UPLOADED
+                            ↘ LYRICS_READY (if SYNCED .lrc) → ASSETS_READY → VIDEO_CREATED → UPLOADED
     """
     workspace = song_data.get('workspace_dir')
     title     = song_data.get('title')
@@ -29,12 +31,13 @@ def run_pipeline(song_data):
         db_manager.init_db()
         current_status = db_manager.get_song_status(video_id)
 
-        # Already fully finished — nothing to do
+        # FIX 6: Removed ASSETS_READY from this guard so the pipeline
+        # can resume into the render phase if it was interrupted there.
         if current_status in ["VIDEO_CREATED", "UPLOADED", "COMPLETED"]:
             print(f"✅ Pipeline already finished for '{title}' (Status: {current_status}). Aborting.")
             return True
 
-        # New song — insert into DB
+        # New song
         if not current_status:
             print("\n[+] New song detected. Initializing in Database...")
             db_manager.insert_new_job(video_id, title, artist, status="PENDING")
@@ -46,7 +49,7 @@ def run_pipeline(song_data):
         # PHASE 1: AUDIO FETCH
         # ==========================================
         if current_status == "PENDING":
-            print("\n[1/5] Triggering Audio Download...")
+            print("\n[1/4] Triggering Audio Download...")
             audio_path = song_fetch.download_audio(url, workspace)
 
             if audio_path == UNAVAILABLE:
@@ -65,7 +68,7 @@ def run_pipeline(song_data):
         # PHASE 2: LYRICS FETCH
         # ==========================================
         if current_status == "AUDIO_FETCHED":
-            print("\n[2/5] Triggering Multi-Tier Lyrics Fetcher...")
+            print("\n[2/4] Triggering Multi-Tier Lyrics Fetcher...")
 
             lyric_status, lyric_path = lyrics_fetcher.fetch_lyrics(title, artist, workspace)
 
@@ -87,7 +90,7 @@ def run_pipeline(song_data):
         # Handles both: auto PLAIN result and manual .txt upload resume
         # ==========================================
         if current_status == "LYRICS_FETCHED":
-            print("\n[2.5/5] Plain text lyrics detected. Running Sync Engine...")
+            print("\n[2.5/4] Plain text lyrics detected. Running Sync Engine...")
             audio_file = os.path.join(workspace, "audio.mp3")
             txt_file   = os.path.join(workspace, "lyrics.txt")
 
@@ -99,7 +102,7 @@ def run_pipeline(song_data):
 
             # Run post-processor so filler merging and clean line-level
             # segments are applied — same quality as the SYNCED path.
-            print("\n[2.5b/5] Running Timestamp Post-Processor on Whisper output...")
+            print("\n[2.5b/4] Running Timestamp Post-Processor on Whisper output...")
             process_timestamps(workspace)
 
             db_manager.update_song_status(video_id, "ASSETS_READY")
@@ -112,11 +115,10 @@ def run_pipeline(song_data):
         # renderer has what it needs.
         # ==========================================
         if current_status == "LYRICS_READY":
-            print("\n[2.6/5] Pre-synced LRC detected. Generating timestamps.json...")
+            print("\n[2.6/4] Pre-synced LRC detected. Generating timestamps.json...")
             ts_path = process_timestamps(workspace)
 
             if not ts_path:
-                # Non-fatal: log and continue — renderer can still use LRC
                 print("⚠️ Timestamp processing failed. Renderer will attempt LRC fallback.")
             else:
                 print(f"✅ timestamps.json ready: {ts_path}")
@@ -128,19 +130,50 @@ def run_pipeline(song_data):
         # PHASE 3: RENDER VIDEO
         # ==========================================
         if current_status == "ASSETS_READY":
-            print("\n[3/5] Assets confirmed. Handing off to Render Engine...")
-            success = render_engine.render_video(
-                video_id  = video_id,
-                title     = title,
-                artist    = artist,
-                workspace = workspace,
-            )
+            print("\n[3/4] Assets confirmed. Handing off to Render Engine...")
+
+            # FIX 4: render_video() takes no arguments — it fetches the job
+            # from the DB itself. Passing kwargs would crash with TypeError.
+            success = render_engine.render_video()
 
             if not success:
                 print(f"❌ Render Engine failed for '{title}'. Check logs above.")
                 return False
 
             current_status = "VIDEO_CREATED"
+
+        # ==========================================
+        # PHASE 4: YOUTUBE UPLOAD
+        # ==========================================
+        # FIX 2: return True was here, making this entire block dead code.
+        # FIX 3: status was "VIDEO_RENDERED" — render_engine sets "VIDEO_CREATED".
+        if current_status == "VIDEO_CREATED":
+            print("\n[4/4] Triggering YouTube Uploader...")
+
+            # Find the rendered video by title pattern (not date) so the
+            # lookup works even if the render crossed midnight or the pipeline
+            # was resumed on a later day.
+            import glob
+            safe_title = re.sub(r'[\\/*?:"<>|]', "", title).strip()
+            output_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "Output"))
+            matches    = glob.glob(os.path.join(output_dir, f"*-{safe_title}.mp4"))
+
+            if not matches:
+                print(f"❌ Pipeline aborted: no rendered video found in Output/ for '{title}'")
+                return False
+
+            # If somehow multiple matches exist, take the most recently modified one
+            final_video_path = max(matches, key=os.path.getmtime)
+            print(f"   🎬 Found rendered video: {final_video_path}")
+
+            yt_video_id = youtube_uploader.upload_video(final_video_path, song_data)
+
+            if yt_video_id:
+                db_manager.update_song_status(video_id, "UPLOADED")
+                current_status = "UPLOADED"
+            else:
+                print("❌ Pipeline aborted: YouTube upload failed.")
+                return False
 
         print(f"\n🎉 Master Controller complete! '{title}' → Status: {current_status}")
         return True
