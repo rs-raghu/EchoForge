@@ -2,23 +2,23 @@
   "segments": [
     {
       "text": "Tune parda uthaya, kya baat ho gayi?",
-      "start": 7.52,
+      "start": 7.5,
       "end": 17.28
     },
     {
       "text": "Haaye, yeh mulaqat wardaat ho gayi",
       "start": 18.28,
-      "end": 26.64
+      "end": 27.2
     },
     {
       "text": "Nain milaye humne ek dooje se yoon",
-      "start": 26.64,
-      "end": 35.44
+      "start": 27.2,
+      "end": 34.06
     },
     {
       "text": "Raat huyi, phir din, phir se raat ho gayi",
-      "start": 35.44,
-      "end": 61.44
+      "start": 35.26,
+      "end": 62.28
     },
     {
       "text": "Kacchi kali, sada masoom chehra",
@@ -27,77 +27,72 @@
     },
     {
       "text": "Neeyat noorani, sada dil hai sunehra",
-      "start": 67.02,
+      "start": 66.22,
       "end": 70.04
     },
     {
       "text": "Kacchi kali, sada masoom chehra",
       "start": 70.04,
-      "end": 73.66
+      "end": 73.64
     },
     {
       "text": "Neeyat noorani, sada dil hai sunehra",
-      "start": 73.66,
-      "end": 77.46
+      "start": 73.64,
+      "end": 77.48
     },
     {
       "text": "Parde de pichhe ki hai, kisnu pata",
-      "start": 77.46,
-      "end": 80.76
+      "start": 77.48,
+      "end": 80.7
     },
     {
       "text": "Parde de pichhe ki hai, kisnu pata",
-      "start": 80.76,
+      "start": 80.7,
       "end": 84.32
     },
     {
       "text": "Ikk afeemi main, chaska chakhaava",
       "start": 84.32,
-      "end": 87.86
+      "end": 87.94
     },
     {
       "text": "Tainu shararat sikhaava jado naina ladaava",
-      "start": 87.86,
+      "start": 87.94,
       "end": 93.8
     },
     {
       "text": "Tainu shararat sikhaava jado naina ladaava",
       "start": 93.8,
-      "end": 101.9
+      "end": 101.88
     },
     {
       "text": "Naina 'ch mere ikk neela samandar",
-      "start": 101.9,
-      "end": 106.64
+      "start": 101.88,
+      "end": 106.62
     },
     {
       "text": "Naina 'ch mere ikk neela samandar",
-      "start": 106.64,
+      "start": 106.62,
       "end": 110.02
     },
     {
       "text": "Samandar mein dubki lavaava",
       "start": 110.02,
-      "end": 113.39
+      "end": 113.36
     },
     {
       "text": "Tainu shararat sikhaava jado naina ladaava",
       "start": 114.74,
-      "end": 119.36
+      "end": 119.32
     },
     {
       "text": "Tainu shararat sikhaava jado naina ladaava",
-      "start": 119.36,
+      "start": 119.32,
       "end": 135.9
     },
     {
-      "text": "Aaye-haaye",
+      "text": "Aaye-haaye Tum bhi ho tanha, aur hum akele",
       "start": 143.4,
-      "end": 143.5
-    },
-    {
-      "text": "Tum bhi ho tanha, aur hum akele",
-      "start": 143.5,
       "end": 146.58
     },
     {
@@ -113,57 +108,57 @@
     {
       "text": "Jo raat huyi, benaqaab ho gaye",
       "start": 153.88,
-      "end": 158.14
+      "end": 158.12
     },
     {
       "text": "Mere labon pe saji surkhiyaan",
-      "start": 158.14,
+      "start": 158.12,
       "end": 161.86
     },
     {
       "text": "Mere labon pe saji surkhiyaan",
       "start": 161.9,
-      "end": 165.0
+      "end": 165.02
     },
     {
       "text": "Gulaabi ae sharbat pilaava",
-      "start": 165.0,
-      "end": 168.38
+      "start": 165.02,
+      "end": 168.3
     },
     {
       "text": "Tainu shararat sikhaava jado naina ladaava",
-      "start": 168.38,
+      "start": 168.3,
       "end": 174.3
     },
     {
       "text": "Tainu shararat sikhaava jado naina ladaava",
       "start": 174.3,
-      "end": 182.26
+      "end": 182.12
     },
     {
       "text": "Naina 'ch mere ikk neela samandar",
-      "start": 182.26,
+      "start": 182.66,
       "end": 187.22
     },
     {
       "text": "Naina 'ch mere rangeela samandar",
       "start": 187.22,
-      "end": 190.66
+      "end": 190.64
     },
     {
       "text": "Samandar mein dubki lavaava",
-      "start": 190.66,
+      "start": 190.64,
       "end": 194.38
     },
     {
       "text": "Tainu shararat sikhaava jado naina ladaava",
       "start": 194.38,
-      "end": 198.36
+      "end": 229.042
     },
     {
       "text": "Tainu shararat sikhaava jado naina ladaava",
-      "start": 198.36,
-      "end": 207.69
+      "start": 229.042,
+      "end": 229.042
     }
   ]
 }

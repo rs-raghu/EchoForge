@@ -148,6 +148,7 @@ export const LyricVideo: React.FC = () => {
       {inLogoPhase && (
         <Img
           src={staticFile('logo.png')}
+          // onError={() => setLogoAvailable(false)}
           style={{
             width: '320px',
             opacity: logoOpacity,

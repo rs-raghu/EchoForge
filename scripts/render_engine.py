@@ -1,8 +1,11 @@
 """
 render_engine.py
 
-Picks the next ASSETS_READY song from the pipeline, stages all files into
-the Remotion public/ folder, and triggers the renderer.
+Stages all asset files into the Remotion public/ folder and triggers the renderer.
+
+Can be called two ways:
+  1. From master_controller.py with specific song details (primary — no DB query needed).
+  2. Standalone via __main__ — picks the next ASSETS_READY job from the DB.
 
 Key responsibilities:
   - Background selection  : Assets/backgrounds/{rank % 30 + 1}.jpg  (modulo-30)
@@ -17,9 +20,9 @@ Key responsibilities:
 import json
 import os
 import re
+import glob
 import shutil
 import subprocess
-import glob
 from datetime import datetime
 
 import db_manager
@@ -40,17 +43,16 @@ INTRO_DURATION   = 5.0   # 2 s logo + 3 s details
 
 def _clean_name(name: str) -> str:
     """Strip OS-illegal characters — mirrors auto_discovery.clean_folder_name."""
-    return re.sub(r'[\\/*?:"<>|]', "", name).strip()
+    return re.sub(r'[\\/*?:"<>|\[\]]', "", name).strip()
 
 
 def _select_background(rank: int) -> str:
     """
     Return the path to the background image for this song's rank.
     Images are named 1.jpg … 30.jpg in Assets/backgrounds/.
-    The modulo wraps cleanly: rank 0 → 1.jpg, rank 30 → 1.jpg, etc.
-    rank=0 is used for manual entries; it maps to 1.jpg.
+    rank=0 is used for manual entries and maps to 1.jpg.
     """
-    index = (max(0, rank - 1) % 30) + 1   # ranks are 1-based on the chart
+    index = (max(0, rank - 1) % 30) + 1
     return os.path.join(BACKGROUNDS_DIR, f"{index}.jpg")
 
 
@@ -67,124 +69,162 @@ def _compute_audio_delay(timestamps_path: str) -> float:
         5-second intro screen ends.
 
     Examples:
-      firstLyricAt = 19.64 s  →  delay = 0    (Golden)
+      firstLyricAt = 19.64 s  →  delay = 0    (song has its own intro)
       firstLyricAt =  3.00 s  →  delay = 2.0  (audio starts at video t=2s)
       firstLyricAt =  0.50 s  →  delay = 4.5  (pure-hook song)
     """
-    with open(timestamps_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(timestamps_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"   ⚠️  Could not read timestamps.json ({e}) — defaulting delay to 0.")
+        return 0.0
 
     segments = data.get("segments", [])
     if not segments:
+        print("   ⚠️  timestamps.json has no segments — defaulting delay to 0.")
         return 0.0
 
-    first_start = segments[0]["start"]
+    first_start = segments[0].get("start", 0.0)
     delay = max(0.0, INTRO_DURATION - first_start)
     return round(delay, 3)
 
 
+def _find_asset_folder(workspace: str | None, title: str) -> str | None:
+    """
+    Locate the song's workspace folder.
+
+    Priority:
+      1. Use the workspace path passed in directly (most reliable).
+      2. Fall back to glob search inside ASSETS_DIR by sanitised title.
+         Uses glob.escape() so titles with [ ] don't break the pattern.
+    """
+    # Direct path passed in from master_controller
+    if workspace and os.path.isdir(workspace):
+        return workspace
+
+    # Glob fallback (standalone / manual usage)
+    safe = _clean_name(title)
+    pattern = os.path.join(ASSETS_DIR, f"*-{glob.escape(safe)}*")
+    folders = glob.glob(pattern)
+    if folders:
+        # Sort by modification time, return newest — handles duplicate date prefixes
+        folders.sort(key=os.path.getmtime, reverse=True)
+        return folders[0]
+
+    return None
+
+
 def _get_ready_job():
     """
-    Pull the first ASSETS_READY job from the database.
-    Returns (video_id, title, artist, rank) or None.
+    Pull the first ASSETS_READY job from the database using the shared lock.
+    Returns (video_id, title, artist) or None.
     """
-    import sqlite3
-    db_path = db_manager.DB_PATH
-    try:
-        conn   = sqlite3.connect(db_path, timeout=30, check_same_thread=False)
+    with db_manager._DB_LOCK:
+        conn   = db_manager._get_conn()
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT video_id, title, artist FROM pipeline_jobs WHERE status = ? LIMIT 1",
-            ("ASSETS_READY",),
-        )
-        row = cursor.fetchone()
-        conn.close()
-        return row  # (video_id, title, artist) or None
-    except Exception as e:
-        print(f"❌ DB query failed: {e}")
-        return None
-
-
-def _find_asset_folder(title: str) -> str | None:
-    """Locate the song's workspace folder inside Assets/."""
-    safe = _clean_name(title)
-    folders = glob.glob(os.path.join(ASSETS_DIR, f"*-{safe}*"))
-    return folders[0] if folders else None
+        try:
+            cursor.execute(
+                "SELECT video_id, title, artist FROM pipeline_jobs WHERE status = ? LIMIT 1",
+                ("ASSETS_READY",),
+            )
+            row = cursor.fetchone()
+        except Exception as e:
+            print(f"❌ DB query failed: {e}")
+            row = None
+        finally:
+            conn.close()
+    return row
 
 
 # ─── Main entry point ─────────────────────────────────────────────────────────
 
-def render_video():
+def render_video(
+    video_id:  str | None = None,
+    title:     str | None = None,
+    artist:    str | None = None,
+    workspace: str | None = None,
+) -> bool:
     """
-    Full render pipeline:
-      1. Fetch next ASSETS_READY job.
-      2. Load metadata to get rank for background selection.
-      3. Compute audio delay from timestamps.
-      4. Stage all public/ assets (audio, timestamps, metadata, bg, logo,
-         audioConfig).
-      5. Run Remotion CLI.
-      6. Move output to Output/YYYY-MM-DD-Title.mp4.
-      7. Update DB → VIDEO_CREATED.
+    Full render pipeline. Returns True on success, False on failure.
+
+    When called from master_controller, video_id / title / artist / workspace
+    are all provided — no DB query needed.
+
+    When called standalone (__main__), all args are None and the function
+    queries the DB for the next ASSETS_READY job.
     """
-    print("🎬 BOOTING RENDER ENGINE...")
+    print("\n🎬 BOOTING RENDER ENGINE...")
     db_manager.init_db()
 
-    # ── 1. Job queue ──────────────────────────────────────────────────────────
-    job = _get_ready_job()
-    if not job:
-        print("💤 No songs in ASSETS_READY status. Nothing to render.")
-        return
+    # ── 1. Resolve job details ────────────────────────────────────────────────
+    if not (video_id and title and artist):
+        # Standalone mode — query DB
+        job = _get_ready_job()
+        if not job:
+            print("💤 No songs in ASSETS_READY status. Nothing to render.")
+            return False
+        video_id, title, artist = job
+        workspace = None   # will be resolved by glob below
 
-    video_id, title, artist = job
-    print(f"\n🚀 Rendering: {title}  —  {artist}")
+    print(f"\n🚀 Rendering: {title}  —  {artist}  (ID: {video_id})")
 
     # ── 2. Locate asset folder ────────────────────────────────────────────────
-    asset_folder = _find_asset_folder(title)
+    asset_folder = _find_asset_folder(workspace, title)
     if not asset_folder:
         print(f"❌ Asset folder not found for: {title}")
-        return
+        return False
     print(f"   📂 Asset folder: {asset_folder}")
 
-    # ── 3. Load metadata (for rank) ───────────────────────────────────────────
-    metadata_path    = os.path.join(asset_folder, "metadata.json")
-    timestamps_path  = os.path.join(asset_folder, "timestamps.json")
+    # ── 3. Validate required files exist ─────────────────────────────────────
+    metadata_path   = os.path.join(asset_folder, "metadata.json")
+    timestamps_path = os.path.join(asset_folder, "timestamps.json")
+    audio_path      = os.path.join(asset_folder, "audio.mp3")
 
-    with open(metadata_path, "r", encoding="utf-8") as f:
-        meta = json.load(f)
+    missing = [p for p in [metadata_path, timestamps_path, audio_path] if not os.path.exists(p)]
+    if missing:
+        for m in missing:
+            print(f"   ❌ Missing required file: {m}")
+        return False
+
+    # ── 4. Load metadata (for rank) ───────────────────────────────────────────
+    try:
+        with open(metadata_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"❌ Could not read metadata.json: {e}")
+        return False
 
     rank = int(meta.get("rank", 0))
 
-    # ── 4. Select background ──────────────────────────────────────────────────
+    # ── 5. Select background ──────────────────────────────────────────────────
     bg_source = _select_background(rank)
     bg_index  = (max(0, rank - 1) % 30) + 1
-    print(f"   🖼️  Background: {bg_index}.jpg  (rank {rank} → index {bg_index})")
+    print(f"   🖼️  Background: {bg_index}.jpg  (rank {rank})")
 
     if not os.path.exists(bg_source):
-        print(f"❌ Background not found: {bg_source}")
-        return
+        print(f"❌ Background image not found: {bg_source}")
+        print(f"   Make sure Assets/backgrounds/{bg_index}.jpg exists.")
+        return False
 
-    # ── 5. Compute audio delay ────────────────────────────────────────────────
+    # ── 6. Compute audio delay ────────────────────────────────────────────────
     audio_delay = _compute_audio_delay(timestamps_path)
     if audio_delay > 0:
-        first_lyric = timestamps_json_first_start(timestamps_path)
-        print(f"   ⏱️  First lyric at {first_lyric:.2f}s → audio delayed by {audio_delay}s in video")
+        first_lyric = _first_lyric_start(timestamps_path)
+        print(f"   ⏱️  First lyric at {first_lyric:.2f}s → audio delayed by {audio_delay}s")
     else:
-        print(f"   ⏱️  First lyric >= 5 s → no audio delay needed")
+        print(f"   ⏱️  First lyric >= 5s → no audio delay needed")
 
-    # ── 6. Stage files into video-engine/public/ ──────────────────────────────
+    # ── 7. Stage files into video-engine/public/ ──────────────────────────────
     os.makedirs(REACT_PUBLIC_DIR, exist_ok=True)
-    print("   📦 Staging assets into video-engine/public/...")
+    print("\n   📦 Staging assets into video-engine/public/...")
 
-    # Required files from asset folder
-    required = {
-        "audio.mp3":       os.path.join(asset_folder, "audio.mp3"),
+    files_to_copy = {
+        "audio.mp3":       audio_path,
         "timestamps.json": timestamps_path,
         "metadata.json":   metadata_path,
     }
-    for dest_name, src_path in required.items():
-        if not os.path.exists(src_path):
-            print(f"   ❌ Missing required asset: {src_path}")
-            return
+    for dest_name, src_path in files_to_copy.items():
         shutil.copy(src_path, os.path.join(REACT_PUBLIC_DIR, dest_name))
         print(f"   ✅ {dest_name}")
 
@@ -192,9 +232,9 @@ def render_video():
     shutil.copy(bg_source, os.path.join(REACT_PUBLIC_DIR, "bg.jpg"))
     print(f"   ✅ bg.jpg  ({bg_index}.jpg)")
 
-    # Logo
+    # Logo — optional, warn but don't abort
     if not os.path.exists(LOGO_PATH):
-        print(f"   ⚠️  logo.png not found at {LOGO_PATH} — continuing without it")
+        print(f"   ⚠️  logo.png not found at {LOGO_PATH} — rendering without logo")
     else:
         shutil.copy(LOGO_PATH, os.path.join(REACT_PUBLIC_DIR, "logo.png"))
         print(f"   ✅ logo.png")
@@ -205,13 +245,13 @@ def render_video():
         json.dump(audio_config, f, indent=2)
     print(f"   ✅ audioConfig.json  (delay={audio_delay}s)")
 
-    # ── 7. Run Remotion renderer ──────────────────────────────────────────────
+    # ── 8. Run Remotion renderer ──────────────────────────────────────────────
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    today     = datetime.now().strftime("%Y-%m-%d")
+    today      = datetime.now().strftime("%Y-%m-%d")
     safe_title = _clean_name(title)
-    out_name  = f"{today}-{safe_title}.mp4"
-    out_path  = os.path.abspath(os.path.join(OUTPUT_DIR, out_name))
+    out_name   = f"{today}-{safe_title}.mp4"
+    out_path   = os.path.abspath(os.path.join(OUTPUT_DIR, out_name))
 
     print(f"\n   🎞️  Rendering → {out_path}")
     print("   (This may take several minutes...)\n")
@@ -232,21 +272,31 @@ def render_video():
         )
         print(f"\n✅ Render complete!  →  {out_path}")
         db_manager.update_song_status(video_id, "VIDEO_CREATED")
+        return True
 
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ Remotion render failed: {e}")
+        print(f"\n❌ Remotion render failed (exit code {e.returncode}).")
+        print("   Check the Remotion output above for details.")
+        return False
+
     except Exception as e:
         print(f"\n❌ Unexpected error during render: {e}")
         import traceback
         traceback.print_exc()
+        return False
 
 
-def timestamps_json_first_start(path: str) -> float:
-    """Helper to read the first segment start time."""
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    segs = data.get("segments", [])
-    return segs[0]["start"] if segs else 0.0
+# ─── Internal helper ──────────────────────────────────────────────────────────
+
+def _first_lyric_start(path: str) -> float:
+    """Read the start time of the first lyric segment."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        segs = data.get("segments", [])
+        return segs[0].get("start", 0.0) if segs else 0.0
+    except Exception:
+        return 0.0
 
 
 # ─── Standalone ───────────────────────────────────────────────────────────────
