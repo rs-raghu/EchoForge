@@ -26,17 +26,11 @@ import subprocess
 from datetime import datetime
 
 import db_manager
-
-# ─── Configuration ────────────────────────────────────────────────────────────
-_HERE            = os.path.dirname(os.path.abspath(__file__))
-ASSETS_DIR       = os.path.normpath(os.path.join(_HERE, "..", "Assets"))
-BACKGROUNDS_DIR  = os.path.join(ASSETS_DIR, "backgrounds")
-LOGO_PATH        = os.path.normpath(os.path.join(_HERE, "..", "Assets", "logo.png"))
-VIDEO_ENGINE_DIR = os.path.normpath(os.path.join(_HERE, "..", "video-engine"))
-REACT_PUBLIC_DIR = os.path.join(VIDEO_ENGINE_DIR, "public")
-OUTPUT_DIR       = os.path.normpath(os.path.join(_HERE, "..", "Output"))
-
-INTRO_DURATION   = 5.0   # 2 s logo + 3 s details
+from config import (
+    ASSETS_DIR, BACKGROUNDS_DIR, LOGO_PATH,
+    VIDEO_ENGINE_DIR, REACT_PUBLIC_DIR, OUTPUT_DIR,
+    INTRO_DURATION, NUM_BACKGROUNDS, THUMBNAIL_TIMESTAMP,
+)
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -52,7 +46,7 @@ def _select_background(rank: int) -> str:
     Images are named 1.jpg … 30.jpg in Assets/backgrounds/.
     rank=0 is used for manual entries and maps to 1.jpg.
     """
-    index = (max(0, rank - 1) % 30) + 1
+    index = (max(0, rank - 1) % NUM_BACKGROUNDS) + 1
     return os.path.join(BACKGROUNDS_DIR, f"{index}.jpg")
 
 

@@ -2,13 +2,7 @@ import sqlite3
 import os
 import threading
 from datetime import datetime
-
-# ---------------------------------------------------------------------------
-# CONFIGURATION
-# ---------------------------------------------------------------------------
-_HERE   = os.path.dirname(os.path.abspath(__file__))
-DB_DIR  = os.path.normpath(os.path.join(_HERE, "..", "Database"))
-DB_PATH = os.path.join(DB_DIR, "echoforge.db")
+from config import DB_DIR, DB_PATH
 
 # ---------------------------------------------------------------------------
 # ONE LOCK FOR ALL DB OPERATIONS

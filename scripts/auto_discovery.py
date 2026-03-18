@@ -4,9 +4,7 @@ import json
 from datetime import datetime
 from yt_scrapper import scrape_top_50
 import db_manager
-
-# --- CONFIGURATION ---
-ASSETS_DIR = "Assets"
+from config import ASSETS_DIR
 
 def clean_folder_name(name: str):
     """Sanitizes strings by removing OS-illegal characters for safe folder creation."""
@@ -48,7 +46,7 @@ def get_top_song(skip_count=0):
         return None
         
     print("\n[2/2] Analyzing Database for Valid Songs...")
-    active_statuses = ["AUDIO_DOWNLOADED", "LYRICS_FETCHED", "ASSETS_READY", "VIDEO_CREATED", "UPLOADED"]
+    active_statuses = ["AUDIO_DOWNLOADED", "LYRICS_FETCHED", "ASSETS_READY", "VIDEO_CREATED", "UPLOADED", "UNAVAILABLE", "DISCARDED"]
     
     valid_songs = []
     

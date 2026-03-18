@@ -22,19 +22,16 @@ STRATEGY:
 import json
 import os
 import re
+from config import (
+    FILLER_SOUNDS, MIN_WORDS_STANDALONE,
+    LOOK_AHEAD_BASE, LOOK_AHEAD_PER_WORD, LOOK_AHEAD_PER_MISS, MIN_MATCH_RATIO,
+    MIN_SEGMENT_DURATION, MIN_SEGMENT_GAP,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CONFIG
+# CONFIG — all constants imported from config.py
 # ─────────────────────────────────────────────────────────────────────────────
-
-FILLER_SOUNDS = {
-    "oh", "ah", "uh", "eh", "mm", "hmm", "hm", "na", "la", "da",
-    "ooh", "aah", "ayy", "aye", "hey", "hah", "yeah", "yea", "ya",
-    "woo", "whoa", "woah", "no", "oo", "du", "de", "huh"
-}
-MIN_WORDS_STANDALONE = 3
-LOOK_AHEAD           = 8   # Max words to skip when searching for a match
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -170,22 +167,43 @@ def build_segments_from_txt(lyric_lines: list, all_words: list) -> list:
 
         matched  = []
         temp_wi  = wi
+        misses   = 0   # words in this line Whisper failed to match
 
         for exp_w in expected:
             exp_norm = _norm(exp_w)
-            limit    = min(temp_wi + LOOK_AHEAD, len(all_words))
+
+            # Dynamic window: wider for longer lines and grows with each miss.
+            # A miss means Whisper likely inserted substitute words, so we need
+            # to scan further ahead to find the real next word.
+            window = LOOK_AHEAD_BASE + len(expected) * LOOK_AHEAD_PER_WORD + misses * LOOK_AHEAD_PER_MISS
+            limit  = min(temp_wi + window, len(all_words))
+
+            found = False
             for k in range(temp_wi, limit):
                 if _norm(all_words[k]["word"]) == exp_norm:
                     matched.append(all_words[k])
                     temp_wi = k + 1
+                    found   = True
                     break
-            # If no match: Whisper mis-heard or skipped — continue anyway
 
-        if matched:
+            if not found:
+                misses += 1   # widen the window for the next word in this line
+
+        # Commit guard: only advance the global pointer when enough words
+        # matched.  A sparse match (< _MIN_MATCH_RATIO) means the pointer
+        # likely drifted — fall back to estimation and retry from `wi` next line.
+        match_ratio = len(matched) / len(expected) if expected else 0.0
+
+        if matched and match_ratio >= MIN_MATCH_RATIO:
             wi        = temp_wi
             seg_start = matched[0]["start"]
             seg_end   = matched[-1]["end"]
         else:
+            if matched and match_ratio < MIN_MATCH_RATIO:
+                print(
+                    f"  ⚠️  Low match ratio ({match_ratio:.0%}) for "
+                    f'"{line_text[:40]}" — using time estimate, not advancing pointer.'
+                )
             # Fallback: estimate from previous segment
             seg_start = segments[-1]["end"] if segments else 0.0
             seg_end   = seg_start + max(0.5, len(expected) * 0.35)
@@ -279,6 +297,109 @@ def merge_filler_segments(segments: list) -> list:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# STEP 5 — TIMESTAMP SANITY VALIDATION & AUTO-FIX
+# ─────────────────────────────────────────────────────────────────────────────
+
+# MIN_SEGMENT_DURATION and MIN_SEGMENT_GAP are imported from config.py
+
+
+def validate_and_fix_segments(segments: list) -> list:
+    """
+    Audits every segment for four classes of bad timestamps produced by
+    Whisper or the fallback estimators, and fixes each one in-place.
+
+    Problems detected and corrected (in order):
+
+    1. Negative start  — clamp start to 0.0.
+       Cause: Whisper occasionally returns a word at t < 0.
+
+    2. Backwards segment  — end <= start.
+       Fix: set end = start + estimated_duration based on word count.
+       Cause: Whisper word boundaries can cross when speech is very fast.
+
+    3. Overlap with next segment  — seg[i].end > seg[i+1].start.
+       Fix: clip seg[i].end = seg[i+1].start - MIN_SEGMENT_GAP.
+       Cause: sequence matching sometimes assigns the same timestamp region
+       to two consecutive lines.
+
+    4. Zero / sub-minimum duration after all fixes  — end - start < MIN_SEGMENT_DURATION.
+       Fix: extend end = start + MIN_SEGMENT_DURATION.
+       Cause: can result from the overlap clip above on very tight segments.
+
+    All fixes are logged with the line text so you can spot patterns.
+    The list is modified in-place AND returned for convenience.
+    """
+    fixed_negative  = 0
+    fixed_backwards = 0
+    fixed_overlaps  = 0
+    fixed_short     = 0
+
+    for i, seg in enumerate(segments):
+        label = f"  [{i}] \"{seg['text'][:40]}\""
+
+        # ── Fix 1: negative start ─────────────────────────────────────────────
+        if seg["start"] < 0.0:
+            print(f"⚠️  Negative start {seg['start']:.3f}s clamped to 0.0 {label}")
+            seg["start"] = 0.0
+            fixed_negative += 1
+
+        # ── Fix 2: backwards segment (end <= start) ───────────────────────────
+        if seg["end"] <= seg["start"]:
+            word_count   = max(1, len(seg["text"].split()))
+            estimated    = round(word_count * 0.4, 3)   # ~0.4 s per word
+            new_end      = round(seg["start"] + estimated, 3)
+            print(
+                f"⚠️  Backwards segment [{seg['start']:.3f}s → {seg['end']:.3f}s] "
+                f"fixed → end={new_end:.3f}s {label}"
+            )
+            seg["end"]  = new_end
+            fixed_backwards += 1
+
+        # ── Fix 3: overlap with the next segment ──────────────────────────────
+        if i + 1 < len(segments):
+            next_start = segments[i + 1]["start"]
+            if seg["end"] > next_start - MIN_SEGMENT_GAP:
+                clipped = round(next_start - MIN_SEGMENT_GAP, 3)
+                if clipped > seg["start"]:   # only clip if it leaves some duration
+                    print(
+                        f"⚠️  Overlap: seg[{i}].end {seg['end']:.3f}s > "
+                        f"seg[{i+1}].start {next_start:.3f}s — "
+                        f"clipped to {clipped:.3f}s {label}"
+                    )
+                    seg["end"]     = clipped
+                    fixed_overlaps += 1
+
+        # ── Fix 4: sub-minimum duration (may result from Fix 3) ───────────────
+        if seg["end"] - seg["start"] < MIN_SEGMENT_DURATION:
+            # Don't extend past the next segment's start
+            max_end = (
+                round(segments[i + 1]["start"] - MIN_SEGMENT_GAP, 3)
+                if i + 1 < len(segments)
+                else seg["start"] + MIN_SEGMENT_DURATION
+            )
+            new_end = min(round(seg["start"] + MIN_SEGMENT_DURATION, 3), max_end)
+            if new_end > seg["end"]:
+                print(
+                    f"⚠️  Short segment ({seg['end'] - seg['start']:.3f}s) "
+                    f"extended to {new_end - seg['start']:.3f}s {label}"
+                )
+                seg["end"]  = new_end
+                fixed_short += 1
+
+    total = fixed_negative + fixed_backwards + fixed_overlaps + fixed_short
+    if total == 0:
+        print("✅ Timestamp validation passed — no issues found.")
+    else:
+        print(
+            f"🔧 Timestamp validation fixed {total} issue(s): "
+            f"{fixed_negative} negative, {fixed_backwards} backwards, "
+            f"{fixed_overlaps} overlaps, {fixed_short} short."
+        )
+
+    return segments
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # MAIN ENTRY POINT
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -354,6 +475,13 @@ def process_timestamps(workspace_folder: str) -> str | None:
     after    = len(segments)
     if before != after:
         print(f"  Merged {before - after} filler segment(s). Final count: {after}")
+
+    # ── Validate and fix timestamps ───────────────────────────────────────────
+    # Runs after filler merging so we validate the final shape the renderer
+    # will actually see — not intermediate segments that will be merged away.
+    print("\n── Timestamp Validation ────────────────────────────────────────")
+    segments = validate_and_fix_segments(segments)
+    print("────────────────────────────────────────────────────────────────")
 
     # ── Backup original timestamps.json if it has not been backed up yet ──────
     if os.path.exists(ts_json) and not os.path.exists(raw_json):

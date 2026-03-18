@@ -13,6 +13,13 @@ import {
 import timestamps from '../public/timestamps.json';
 import metadata from '../public/metadata.json';
 import audioConfig from '../public/audioConfig.json';
+import { loadFont } from '@remotion/google-fonts/Inter';
+
+// ─── Load Inter from Google Fonts ────────────────────────────────────────────
+// loadFont() must be called at module level (outside the component) so Remotion
+// can resolve and embed the font before rendering begins.
+// The returned fontFamily string is used in every text style below.
+const { fontFamily } = loadFont();
 
 // ─── Timeline constants ───────────────────────────────────────────────────────
 const LOGO_START    = 0.0;   // seconds
@@ -173,7 +180,7 @@ export const LyricVideo: React.FC = () => {
               fontSize: '100px',
               fontWeight: 'bold',
               margin: 0,
-              fontFamily: 'sans-serif',
+              fontFamily,
               letterSpacing: '-2px',
               lineHeight: 1.1,
             }}
@@ -185,7 +192,7 @@ export const LyricVideo: React.FC = () => {
               color: '#b3b3b3',
               fontSize: '55px',
               margin: '24px 0 0 0',
-              fontFamily: 'sans-serif',
+              fontFamily,
               fontWeight: 'normal',
             }}
           >
@@ -200,7 +207,7 @@ export const LyricVideo: React.FC = () => {
           style={{
             color: '#ffffff',
             fontSize: '85px',
-            fontFamily: 'sans-serif',
+            fontFamily,
             fontWeight: 800,
             textAlign: 'center',
             transform: `translateY(${yOffset}px)`,

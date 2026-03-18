@@ -5,6 +5,8 @@ from googleapiclient.http import MediaFileUpload
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from utils import retry
+from config import THUMBNAIL_TIMESTAMP, YOUTUBE_PRIVACY
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 # youtube.force-ssl is required for thumbnails.set on top of youtube.upload
@@ -15,10 +17,6 @@ SCOPES = [
 SCRIPT_DIR          = os.path.dirname(os.path.abspath(__file__))
 CLIENT_SECRETS_FILE = os.path.join(SCRIPT_DIR, "client_secrets.json")
 TOKEN_FILE          = os.path.join(SCRIPT_DIR, "token.json")
-
-# Frame to grab for the thumbnail — 4 s lands squarely in the details screen
-# (title + artist over the background), which runs from 2 s to 5 s.
-THUMBNAIL_TIMESTAMP = "00:00:04"
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -91,6 +89,69 @@ def extract_thumbnail(video_path: str) -> str | None:
         return None
 
 
+# ─── Retry-wrapped network primitives ─────────────────────────────────────────
+
+def _is_retryable_upload(exc: Exception) -> bool:
+    """
+    Returns False for permanent upload errors that retrying can never fix:
+      - 400 Bad Request    — malformed metadata
+      - 401 Unauthorized   — token is invalid, not just expired
+      - 403 Forbidden      — quota exceeded or account suspended
+      - 404 Not Found      — video ID doesn't exist (mid-upload resume mismatch)
+    All other errors (connection reset, timeout, 500/503) return True.
+    """
+    msg = str(exc)
+    permanent_codes = ["400", "401", "403", "404"]
+    return not any(code in msg for code in permanent_codes)
+
+
+def _is_retryable_thumbnail(exc: Exception) -> bool:
+    """
+    403 on thumbnails.set means the channel isn't phone-verified —
+    a permanent state that retrying won't fix.
+    """
+    msg = str(exc).lower()
+    return "forbidden" not in msg and "403" not in msg
+
+
+@retry(max_attempts=3, delay=15, backoff=2,
+       exceptions=(Exception,), is_retryable=_is_retryable_upload)
+def _do_upload_chunks(request) -> dict:
+    """
+    Drives the resumable upload chunk loop to completion and returns
+    the API response dict containing the video ID.
+
+    Decorated with @retry so transient network errors mid-upload are
+    retried automatically (up to 3 attempts, 15s / 30s backoff).
+    Permanent errors (4xx) are not retried via is_retryable.
+
+    Note: Google's resumable upload protocol is inherently retry-safe —
+    each `next_chunk()` call resumes from where the last chunk ended,
+    so retrying the entire loop after a transient failure does not
+    re-send already-acknowledged data.
+    """
+    response = None
+    while response is None:
+        status, response = request.next_chunk()
+        if status:
+            print(f"⏳ Uploading... {int(status.progress() * 100)}%")
+    return response
+
+
+@retry(max_attempts=3, delay=10, backoff=2,
+       exceptions=(Exception,), is_retryable=_is_retryable_thumbnail)
+def _do_thumbnail_set(youtube, yt_video_id: str, thumb_path: str) -> None:
+    """
+    Calls thumbnails().set() and raises on any failure.
+    Decorated with @retry so transient network errors are retried.
+    403 (unverified channel) is not retried via is_retryable.
+    """
+    youtube.thumbnails().set(
+        videoId    = yt_video_id,
+        media_body = MediaFileUpload(thumb_path, mimetype="image/jpeg"),
+    ).execute()
+
+
 # ─── Thumbnail upload ──────────────────────────────────────────────────────────
 
 def upload_thumbnail(youtube, yt_video_id: str, thumb_path: str) -> bool:
@@ -106,11 +167,7 @@ def upload_thumbnail(youtube, yt_video_id: str, thumb_path: str) -> bool:
     print(f"🖼️  Uploading thumbnail to video {yt_video_id}...")
 
     try:
-        youtube.thumbnails().set(
-            videoId    = yt_video_id,
-            media_body = MediaFileUpload(thumb_path, mimetype="image/jpeg"),
-        ).execute()
-
+        _do_thumbnail_set(youtube, yt_video_id, thumb_path)
         print(f"✅ Thumbnail uploaded successfully!")
         return True
 
@@ -122,7 +179,7 @@ def upload_thumbnail(youtube, yt_video_id: str, thumb_path: str) -> bool:
                 "   Verify at: https://www.youtube.com/verify — then re-run."
             )
         else:
-            print(f"⚠️  Thumbnail upload failed (non-fatal): {e}")
+            print(f"⚠️  Thumbnail upload failed after all retries (non-fatal): {e}")
         return False
 
 
@@ -132,9 +189,9 @@ def upload_video(video_path: str, song_data: dict) -> str | None:
     """
     Full upload pipeline:
       1. Authenticate with YouTube.
-      2. Upload the MP4 with all metadata.
+      2. Upload the MP4 with all metadata (retried on transient errors).
       3. Extract the 4-second frame as a thumbnail.
-      4. Push the thumbnail to the video.
+      4. Push the thumbnail to the video (retried on transient errors).
 
     Returns the YouTube video ID on success, None on failure.
     """
@@ -159,28 +216,24 @@ def upload_video(video_path: str, song_data: dict) -> str | None:
             'categoryId':  '10',   # Music
         },
         'status': {
-            'privacyStatus':          'unlisted',   # ← change to 'public' when ready
+            'privacyStatus':          YOUTUBE_PRIVACY,
             'selfDeclaredMadeForKids': False,
         },
     }
 
     # ── Upload video ───────────────────────────────────────────────────────────
-    print(f"📤 Preparing to upload: {title}")
+    print(f"📤 Preparing to upload: {title}  [{YOUTUBE_PRIVACY}]")
 
-    media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype='video/mp4')
-
-    request  = youtube.videos().insert(
+    media   = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype='video/mp4')
+    request = youtube.videos().insert(
         part       = ','.join(body.keys()),
         body       = body,
         media_body = media,
     )
 
-    response = None
-    while response is None:
-        status, response = request.next_chunk()
-        if status:
-            print(f"⏳ Uploading... {int(status.progress() * 100)}%")
-
+    # _do_upload_chunks drives the chunk loop with automatic retry on
+    # transient network failures. It raises on permanent errors (4xx).
+    response    = _do_upload_chunks(request)
     yt_video_id = response.get('id')
     print(f"✅ Upload Complete! Video ID: {yt_video_id}")
     print(f"🔗 https://youtu.be/{yt_video_id}")

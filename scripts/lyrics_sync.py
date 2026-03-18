@@ -5,6 +5,11 @@ import json
 import shutil
 import subprocess
 import stable_whisper
+from config import (
+    DEMUCS_MODEL, AUDIO_BITRATE,
+    WHISPER_MODEL,
+    LOOK_AHEAD_BASE, LOOK_AHEAD_PER_WORD, LOOK_AHEAD_PER_MISS, MIN_MATCH_RATIO,
+)
 
 # ============================================================
 # STEP 1: VOCAL ISOLATION
@@ -32,8 +37,8 @@ def isolate_vocals(audio_path: str, workspace_dir: str) -> str | None:
                 "python", "-m", "demucs",
                 "--two-stems", "vocals",
                 "--mp3",
-                "--mp3-bitrate", "192",
-                "-n", "htdemucs",
+                "--mp3-bitrate", AUDIO_BITRATE,
+                f"-n", DEMUCS_MODEL,
                 "-o", workspace_dir,
                 audio_path
             ],
@@ -45,7 +50,7 @@ def isolate_vocals(audio_path: str, workspace_dir: str) -> str | None:
             print(f"❌ Demucs failed:\n{result.stderr}")
             return None
 
-        pattern = os.path.join(workspace_dir, "htdemucs", "**", "vocals.mp3")
+        pattern = os.path.join(workspace_dir, DEMUCS_MODEL, "**", "vocals.mp3")
         matches = glob.glob(pattern, recursive=True)
 
         if not matches:
@@ -53,7 +58,7 @@ def isolate_vocals(audio_path: str, workspace_dir: str) -> str | None:
             return None
 
         os.rename(matches[0], vocals_path)
-        shutil.rmtree(os.path.join(workspace_dir, "htdemucs"), ignore_errors=True)
+        shutil.rmtree(os.path.join(workspace_dir, DEMUCS_MODEL), ignore_errors=True)
 
         print(f"✅ Vocal stem saved to: {vocals_path}")
         return vocals_path
@@ -119,8 +124,9 @@ def _sequence_match_lines(lyric_lines: list, all_words: list) -> list:
     Returns:
         [{"text": str, "start": float, "end": float}, ...]
     """
-    LOOK_AHEAD = 8   # Max words to skip when searching for a match
-    wi = 0           # Current position in all_words
+    # Dynamic LOOK_AHEAD — imported from config.py
+
+    wi = 0   # Current position in all_words
     segments = []
 
     for line in lyric_lines:
@@ -132,28 +138,43 @@ def _sequence_match_lines(lyric_lines: list, all_words: list) -> list:
             segments.append({"text": line_text, "start": last_end, "end": last_end + 0.5})
             continue
 
-        matched   = []
-        temp_wi   = wi
+        matched  = []
+        temp_wi  = wi
+        misses   = 0   # words Whisper failed to match in this line
 
         for exp_w in expected:
             exp_norm = _norm(exp_w)
-            found    = False
-            limit    = min(temp_wi + LOOK_AHEAD, len(all_words))
+
+            # Dynamic window: wider for longer lines and grows with each miss.
+            window = LOOK_AHEAD_BASE + len(expected) * LOOK_AHEAD_PER_WORD + misses * LOOK_AHEAD_PER_MISS
+            limit  = min(temp_wi + window, len(all_words))
+
+            found = False
             for k in range(temp_wi, limit):
                 if _norm(all_words[k]["word"]) == exp_norm:
                     matched.append(all_words[k])
                     temp_wi = k + 1
                     found   = True
                     break
-            if not found:
-                # Whisper skipped or mis-heard this word — keep moving
-                pass
 
-        if matched:
+            if not found:
+                misses += 1   # widen window for the next word
+
+        # Commit guard: only advance the global pointer when enough words
+        # matched.  A sparse match means the pointer likely drifted — fall
+        # back to estimation and retry from the same wi position next line.
+        match_ratio = len(matched) / len(expected) if expected else 0.0
+
+        if matched and match_ratio >= MIN_MATCH_RATIO:
             wi        = temp_wi
             seg_start = matched[0]["start"]
             seg_end   = matched[-1]["end"]
         else:
+            if matched and match_ratio < MIN_MATCH_RATIO:
+                print(
+                    f"  \u26a0\ufe0f  Low match ratio ({match_ratio:.0%}) for "
+                    f"\"{line_text[:40]}\" — using time estimate."
+                )
             # Fallback: estimate based on previous segment
             seg_start = segments[-1]["end"] if segments else 0.0
             seg_end   = seg_start + max(0.5, len(expected) * 0.35)
@@ -252,7 +273,7 @@ def align_lyrics(vocals_path: str, lyrics_path: str, workspace_dir: str) -> str 
             print("❌ lyrics.txt is empty — nothing to align.")
             return None
 
-        model = stable_whisper.load_model('large-v2')
+        model = stable_whisper.load_model(WHISPER_MODEL)
 
         print(f"⏱️ Aligning lyrics to vocals... (CPU mode — be patient)")
         # Run forced alignment — returns word-level timestamps per segment

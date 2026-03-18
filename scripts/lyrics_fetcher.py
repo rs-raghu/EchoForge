@@ -3,6 +3,9 @@ import re
 import syncedlyrics
 import lyricsgenius
 from dotenv import load_dotenv
+from lrc_sanitizer import sanitize_lrc
+from utils import retry
+from config import MAX_LINE_CHARS, LYRICS_MIN_LEFT
 
 load_dotenv()
 GENIUS_TOKEN = os.getenv("GENIUS_ACCESS_TOKEN")
@@ -177,8 +180,8 @@ def normalize_lyrics_txt(raw: str) -> str:
 # LINE-LENGTH SPLITTER
 # ============================================================
 
-MAX_LINE_CHARS = 58  # comfortable lyric line width
-_MIN_LEFT      = 20  # never split within the first 20 chars
+# MAX_LINE_CHARS and LYRICS_MIN_LEFT are imported from config.py
+_MIN_LEFT = LYRICS_MIN_LEFT
 
 
 def _find_best_break(s: str) -> int:
@@ -253,6 +256,34 @@ def _split_long_lines(lines: list) -> list:
 
 
 # ============================================================
+# RETRY-WRAPPED NETWORK PRIMITIVES
+# ============================================================
+
+@retry(max_attempts=3, delay=8, backoff=2, exceptions=(Exception,))
+def _do_genius_search(genius, title: str, artist: str | None = None):
+    """
+    Single raw Genius API call — raises on any failure.
+    Decorated with @retry so transient network errors (connection reset,
+    timeout, HTTP 5xx) are retried automatically up to 3 times with
+    8s / 16s backoff.  'Not found' (song is None) is a valid return,
+    not an exception, so it is never retried.
+    """
+    if artist:
+        return genius.search_song(title, artist)
+    return genius.search_song(title)
+
+
+@retry(max_attempts=3, delay=8, backoff=2, exceptions=(Exception,))
+def _do_syncedlyrics_search(query: str, lrc_path: str) -> str | None:
+    """
+    Single syncedlyrics network call — raises on any failure.
+    Decorated with @retry so transient network errors are retried
+    automatically up to 3 times with 8s / 16s backoff.
+    """
+    return syncedlyrics.search(query, save_path=lrc_path)
+
+
+# ============================================================
 # GENIUS ROMANIZED FETCH
 # ============================================================
 
@@ -264,7 +295,7 @@ def _try_genius_search(genius, title: str, artist: str) -> str | None:
     romanized_title = f"{title} (Romanized)"
     print(f"   🔍 Trying: '{artist} - {romanized_title}'")
     try:
-        song = genius.search_song(romanized_title, artist)
+        song = _do_genius_search(genius, romanized_title, artist)
         if not song or not song.lyrics:
             return None
         clean = clean_genius_lyrics(song.lyrics)
@@ -322,7 +353,7 @@ def _fetch_genius_romanized(title: str, artist: str) -> str | None:
     # --- Attempt 3: title-only (Genius picks best match) ---
     print(f"   🔍 Trying title-only search: '{title} (Romanized)'")
     try:
-        song = genius.search_song(f"{title} (Romanized)")
+        song = _do_genius_search(genius, f"{title} (Romanized)")
         if song and song.lyrics:
             clean = clean_genius_lyrics(song.lyrics)
             if _is_latin_only(clean):
@@ -336,7 +367,7 @@ def _fetch_genius_romanized(title: str, artist: str) -> str | None:
     # --- Attempt 4: plain title (no Romanized suffix) with first artist ---
     print(f"   🔍 Trying plain title (no Romanized suffix): '{first_artist} - {title}'")
     try:
-        song = genius.search_song(title, first_artist)
+        song = _do_genius_search(genius, title, first_artist)
         if song and song.lyrics:
             clean = clean_genius_lyrics(song.lyrics)
             if _is_latin_only(clean):
@@ -385,10 +416,18 @@ def fetch_lyrics(title: str, artist: str, workspace_dir: str):
     # ----------------------------------------------------------
     print(f"\n[Tier 1] Searching for synced .lrc lyrics: '{search_query}'")
     try:
-        lrc_text = syncedlyrics.search(search_query, save_path=lrc_path)
+        lrc_text = _do_syncedlyrics_search(search_query, lrc_path)
 
         if lrc_text and _is_valid_lrc(lrc_text):
             print(f"✅ Synced lyrics found!")
+
+            # Sanitize before any further processing so the Latin check
+            # and plain-text copy both operate on the cleaned content.
+            # Fixes malformed LRCs where multiple lines share one timestamp
+            # or timestamps and text are mixed into a single blob.
+            sanitize_lrc(lrc_path)
+            with open(lrc_path, 'r', encoding='utf-8') as f:
+                lrc_text = f.read()
 
             if not _contains_non_latin_words(lrc_text):
                 # Fully Latin — done ✅
