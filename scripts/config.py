@@ -35,6 +35,8 @@ LOGO_PATH        = os.path.join(ASSETS_DIR, "logo.png")
 DB_DIR           = os.path.normpath(os.path.join(_HERE, "..", "Database"))
 DB_PATH          = os.path.join(DB_DIR, "echoforge.db")
 
+LOGS_DIR         = os.path.normpath(os.path.join(_HERE, "..", "Logs"))
+
 VIDEO_ENGINE_DIR = os.path.normpath(os.path.join(_HERE, "..", "video-engine"))
 REACT_PUBLIC_DIR = os.path.join(VIDEO_ENGINE_DIR, "public")
 
@@ -80,10 +82,33 @@ _VALID_PRIVACY  = {"public", "unlisted", "private"}
 _privacy_raw    = os.getenv("YOUTUBE_PRIVACY", "unlisted").strip().lower()
 YOUTUBE_PRIVACY = _privacy_raw if _privacy_raw in _VALID_PRIVACY else "unlisted"
 if _privacy_raw not in _VALID_PRIVACY:
-    print(
-        f"⚠️  config.py: Invalid YOUTUBE_PRIVACY value '{_privacy_raw}' — "
-        f"defaulting to 'unlisted'. Valid values: {_VALID_PRIVACY}"
+    import logging as _logging
+    _logging.warning(
+        "config: invalid YOUTUBE_PRIVACY value '%s' — defaulting to 'unlisted'. "
+        "Valid values: %s", _privacy_raw, _VALID_PRIVACY
     )
+
+
+# ─── Disk space thresholds ───────────────────────────────────────────────────
+#
+# Minimum free gigabytes required before each heavy phase starts.
+# The pipeline aborts with a "LOW_DISK" signal if any threshold is not met,
+# preventing cryptic mid-run failures from "no space left on device".
+#
+# Rationale for defaults:
+#   AUDIO  : audio.mp3 ~50 MB + yt-dlp temp files + breathing room → 1.5 GB
+#   DEMUCS : Demucs writes full vocal + accompaniment stems before renaming
+#            (~200–500 MB per stem for a 4-minute track) → 3 GB
+#   RENDER : Remotion output at 1080p/30fps for 3–5 min → 200–600 MB + Node
+#            module cache + ffmpeg temp files → 2 GB
+#
+# Override via .env:
+#   DISK_MIN_AUDIO_GB=2.0
+#   DISK_MIN_DEMUCS_GB=5.0
+#   DISK_MIN_RENDER_GB=3.0
+DISK_MIN_AUDIO_GB  = float(os.getenv("DISK_MIN_AUDIO_GB",  "1.5"))
+DISK_MIN_DEMUCS_GB = float(os.getenv("DISK_MIN_DEMUCS_GB", "3.0"))
+DISK_MIN_RENDER_GB = float(os.getenv("DISK_MIN_RENDER_GB", "2.0"))
 
 
 # ─── Lyrics line splitting ────────────────────────────────────────────────────

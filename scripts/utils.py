@@ -8,6 +8,10 @@ import time
 import functools
 
 
+
+from logger import get_logger
+log = get_logger(__name__)
+
 def retry(
     max_attempts: int = 3,
     delay: float = 5.0,
@@ -59,17 +63,17 @@ def retry(
 
                     # Final attempt — re-raise so the caller sees the real error
                     if attempt == max_attempts:
-                        print(
+                        log.info(
                             f"❌ [{func.__name__}] All {max_attempts} attempts "
                             f"exhausted. Last error: {exc}"
                         )
                         raise
 
-                    print(
+                    log.info(
                         f"⚠️  [{func.__name__}] Attempt {attempt}/{max_attempts} "
                         f"failed: {exc}"
                     )
-                    print(f"   Retrying in {wait:.0f}s...")
+                    log.info(f"   Retrying in {wait:.0f}s...")
                     time.sleep(wait)
                     wait *= backoff
 

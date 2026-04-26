@@ -1,6 +1,10 @@
 import re
 import os
 
+
+from logger import get_logger
+log = get_logger(__name__)
+
 def sanitize_lrc(lrc_path: str) -> bool:
     """
     Cleans up a malformed .lrc file where multiple lyric lines share a single
@@ -16,17 +20,17 @@ def sanitize_lrc(lrc_path: str) -> bool:
 
     Returns True on success, False on failure.
     """
-    print(f"🧹 LRC Sanitizer running on: {lrc_path}")
+    log.info(f"🧹 LRC Sanitizer running on: {lrc_path}")
 
     if not os.path.exists(lrc_path):
-        print("❌ File not found.")
+        log.error("❌ File not found.")
         return False
 
     with open(lrc_path, 'r', encoding='utf-8') as f:
         raw = f.read()
 
     if not raw.strip():
-        print("❌ File is empty.")
+        log.error("❌ File is empty.")
         return False
 
     # --- STEP 1: Find all timestamp + text pairs ---
@@ -35,7 +39,7 @@ def sanitize_lrc(lrc_path: str) -> bool:
     matches = pattern.findall(raw)
 
     if not matches:
-        print("⚠️  No valid LRC timestamps found. File may already be plain text.")
+        log.warning("⚠️  No valid LRC timestamps found. File may already be plain text.")
         return False
 
     # --- STEP 2: Normalize timestamps to [mm:ss.xx] format ---
@@ -98,7 +102,7 @@ def sanitize_lrc(lrc_path: str) -> bool:
                 clean_lines.append(f"[{interpolated_ts}] {line}")
 
     if not clean_lines:
-        print("❌ Sanitizer produced no output. Leaving original file intact.")
+        log.error("❌ Sanitizer produced no output. Leaving original file intact.")
         return False
 
     # --- STEP 4: Overwrite the file ---
@@ -107,7 +111,7 @@ def sanitize_lrc(lrc_path: str) -> bool:
     with open(lrc_path, 'w', encoding='utf-8') as f:
         f.write(clean_output)
 
-    print(f"✅ Sanitized! {len(clean_lines)} clean lines written back to: {lrc_path}")
+    log.info(f"✅ Sanitized! {len(clean_lines)} clean lines written back to: {lrc_path}")
     return True
 
 
@@ -176,7 +180,7 @@ if __name__ == "__main__":
 [00:35.00] I lived two lives, tried to play both sides But I couldn't find my own place (Oh, oh)
 [00:45.00] We're goin' up, up, up It's our moment You know together we're glowing Gonna be, gonna be golden"""
 
-        print("=== INPUT ===")
-        print(test_lrc)
-        print("\n=== OUTPUT ===")
-        print(sanitize_lrc_string(test_lrc))
+        log.info("=== INPUT ===")
+        log.info(test_lrc)
+        log.info("\n=== OUTPUT ===")
+        log.info(sanitize_lrc_string(test_lrc))

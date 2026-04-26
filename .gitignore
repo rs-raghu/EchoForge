@@ -7,6 +7,7 @@ scripts/token.json
 Assets/
 Output/
 Database/
+Logs/
 
 # Python Auto-Generated Files
 __pycache__/
