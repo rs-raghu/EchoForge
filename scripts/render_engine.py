@@ -1,140 +1,156 @@
 """
 render_engine.py
 
-Stages all asset files into the Remotion public/ folder and triggers the renderer.
+Stages asset files into the Remotion public/ folder and triggers the renderer.
 
-Can be called two ways:
-  1. From master_controller.py with specific song details (primary — no DB query needed).
-  2. Standalone via __main__ — picks the next ASSETS_READY job from the DB.
+Changes
+───────
+• Bug 5   : _get_ready_job() now calls db_manager.get_assets_ready_job() instead
+             of directly accessing private _DB_LOCK / _get_conn symbols.
+• Feature 7: Respects a pinned_bg user setting (set via /changebg in the bot).
+             If pinned_bg is set in DB, that image is always used instead of the
+             rank-modulo background. Falls back to rank-based selection if not set.
 
-Key responsibilities:
-  - Background selection  : Assets/backgrounds/{rank % 30 + 1}.jpg  (modulo-30)
-  - Audio offset calc     : If first lyric < 5 s, delay audio so lyrics land
-                            exactly when the 5 s intro ends.
-  - audioConfig.json      : Written to public/ so LyricVideo.tsx and Root.tsx
-                            both know the delay value without any build-time env.
-  - Output naming         : Output/YYYY-MM-DD-SongTitle.mp4
-  - DB update             : Marks job as VIDEO_CREATED on success.
+CLI USAGE:
+    python render_engine.py
+    python render_engine.py --video-id abc --title "Song" --artist "Art" --workspace ./ws
 """
 
+import argparse
+import glob
 import json
 import os
 import re
-import glob
 import shutil
 import subprocess
 from datetime import datetime
 
 import db_manager
+from config import (
+    ASSETS_DIR, BACKGROUNDS_DIR, LOGO_PATH,
+    VIDEO_ENGINE_DIR, REACT_PUBLIC_DIR, OUTPUT_DIR,
+    INTRO_DURATION, NUM_BACKGROUNDS, THUMBNAIL_TIMESTAMP,
+)
+from logger import get_logger
 
-# ─── Configuration ────────────────────────────────────────────────────────────
-_HERE            = os.path.dirname(os.path.abspath(__file__))
-ASSETS_DIR       = os.path.normpath(os.path.join(_HERE, "..", "Assets"))
-BACKGROUNDS_DIR  = os.path.join(ASSETS_DIR, "backgrounds")
-LOGO_PATH        = os.path.normpath(os.path.join(_HERE, "..", "Assets", "logo.png"))
-VIDEO_ENGINE_DIR = os.path.normpath(os.path.join(_HERE, "..", "video-engine"))
-REACT_PUBLIC_DIR = os.path.join(VIDEO_ENGINE_DIR, "public")
-OUTPUT_DIR       = os.path.normpath(os.path.join(_HERE, "..", "Output"))
+log = get_logger(__name__)
 
-INTRO_DURATION   = 5.0   # 2 s logo + 3 s details
+FONTS_PUBLIC_DIR = os.path.join(REACT_PUBLIC_DIR, "fonts")
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _clean_name(name: str) -> str:
-    """Strip OS-illegal characters — mirrors auto_discovery.clean_folder_name."""
     return re.sub(r'[\\/*?:"<>|\[\]]', "", name).strip()
 
 
 def _select_background(rank: int) -> str:
     """
-    Return the path to the background image for this song's rank.
-    Images are named 1.jpg … 30.jpg in Assets/backgrounds/.
-    rank=0 is used for manual entries and maps to 1.jpg.
+    Return the background image path for this song's chart rank.
+
+    Feature 7: If the user has pinned a custom background via /changebg,
+    that path is used instead of the rank-modulo selection.
+    Falls back to rank-based 1.jpg–30.jpg selection if not set or file missing.
     """
-    index = (max(0, rank - 1) % 30) + 1
+    db_manager.init_db()
+    pinned = db_manager.get_setting("pinned_bg")
+    if pinned and os.path.isfile(pinned):
+        log.info("   🖼️  Using pinned background: %s", pinned)
+        return pinned
+
+    index = (max(0, rank - 1) % NUM_BACKGROUNDS) + 1
     return os.path.join(BACKGROUNDS_DIR, f"{index}.jpg")
 
 
 def _compute_audio_delay(timestamps_path: str) -> float:
-    """
-    Calculate how many seconds to delay the audio track inside the video.
-
-    Logic:
-      - If the first lyric starts at  T >= INTRO_DURATION  →  delay = 0.
-        The song plays from frame 0; the intro (logo + details) runs over
-        whatever musical intro the track already has.
-      - If the first lyric starts at  T < INTRO_DURATION   →  delay = 5 - T.
-        We push the audio forward so the first lyric lands exactly when the
-        5-second intro screen ends.
-
-    Examples:
-      firstLyricAt = 19.64 s  →  delay = 0    (song has its own intro)
-      firstLyricAt =  3.00 s  →  delay = 2.0  (audio starts at video t=2s)
-      firstLyricAt =  0.50 s  →  delay = 4.5  (pure-hook song)
-    """
     try:
-        with open(timestamps_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        print(f"   ⚠️  Could not read timestamps.json ({e}) — defaulting delay to 0.")
+        with open(timestamps_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (json.JSONDecodeError, OSError) as exc:
+        log.warning("⚠️  Could not read timestamps.json (%s) — delay defaults to 0.", exc)
         return 0.0
 
     segments = data.get("segments", [])
     if not segments:
-        print("   ⚠️  timestamps.json has no segments — defaulting delay to 0.")
+        log.warning("⚠️  timestamps.json has no segments — delay defaults to 0.")
         return 0.0
 
     first_start = segments[0].get("start", 0.0)
-    delay = max(0.0, INTRO_DURATION - first_start)
-    return round(delay, 3)
+    return round(max(0.0, INTRO_DURATION - first_start), 3)
+
+
+def _first_lyric_start(path: str) -> float:
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        segs = data.get("segments", [])
+        return segs[0].get("start", 0.0) if segs else 0.0
+    except Exception:
+        return 0.0
 
 
 def _find_asset_folder(workspace: str | None, title: str) -> str | None:
-    """
-    Locate the song's workspace folder.
-
-    Priority:
-      1. Use the workspace path passed in directly (most reliable).
-      2. Fall back to glob search inside ASSETS_DIR by sanitised title.
-         Uses glob.escape() so titles with [ ] don't break the pattern.
-    """
-    # Direct path passed in from master_controller
     if workspace and os.path.isdir(workspace):
         return workspace
-
-    # Glob fallback (standalone / manual usage)
-    safe = _clean_name(title)
+    safe    = _clean_name(title)
     pattern = os.path.join(ASSETS_DIR, f"*-{glob.escape(safe)}*")
     folders = glob.glob(pattern)
     if folders:
-        # Sort by modification time, return newest — handles duplicate date prefixes
         folders.sort(key=os.path.getmtime, reverse=True)
         return folders[0]
-
     return None
 
 
-def _get_ready_job():
+# ─── Bug 5 fix: use public db_manager function instead of private symbols ─────
+
+def _get_ready_job() -> tuple | None:
     """
-    Pull the first ASSETS_READY job from the database using the shared lock.
-    Returns (video_id, title, artist) or None.
+    Return (video_id, title, artist) for the first ASSETS_READY job.
+    Previously accessed db_manager._DB_LOCK and db_manager._get_conn directly;
+    now uses the public db_manager.get_assets_ready_job() instead.
     """
-    with db_manager._DB_LOCK:
-        conn   = db_manager._get_conn()
-        cursor = conn.cursor()
+    return db_manager.get_assets_ready_job()
+
+
+# ─── Font staging ─────────────────────────────────────────────────────────────
+
+def _stage_fonts() -> dict:
+    """
+    Read font preferences from DB, copy .ttf/.otf files into public/fonts/,
+    and return a fontConfig dict for LyricVideo.tsx.
+    """
+    db_manager.init_db()
+    fonts = db_manager.get_font_paths()
+    os.makedirs(FONTS_PUBLIC_DIR, exist_ok=True)
+
+    config = {
+        "titleFont": "", "artistFont": "", "lyricsFont": "",
+        "titleFontFile": None, "artistFontFile": None, "lyricsFontFile": None,
+    }
+    mapping = {
+        "title":  ("titleFont",  "titleFontFile"),
+        "artist": ("artistFont", "artistFontFile"),
+        "lyrics": ("lyricsFont", "lyricsFontFile"),
+    }
+
+    for role, (family_key, file_key) in mapping.items():
+        src = fonts.get(role)
+        if not src or not os.path.isfile(src):
+            if src:
+                log.warning("⚠️  Font file not found for %s: %s", role, src)
+            continue
+        filename = os.path.basename(src)
+        dest     = os.path.join(FONTS_PUBLIC_DIR, filename)
         try:
-            cursor.execute(
-                "SELECT video_id, title, artist FROM pipeline_jobs WHERE status = ? LIMIT 1",
-                ("ASSETS_READY",),
-            )
-            row = cursor.fetchone()
-        except Exception as e:
-            print(f"❌ DB query failed: {e}")
-            row = None
-        finally:
-            conn.close()
-    return row
+            shutil.copy2(src, dest)
+            log.info("   ✅ Font staged: %s → public/fonts/%s", role, filename)
+            family              = os.path.splitext(filename)[0].replace("_", " ").replace("-", " ")
+            config[family_key]  = family
+            config[file_key]    = filename
+        except Exception as exc:
+            log.warning("⚠️  Could not stage font '%s': %s", src, exc)
+
+    return config
 
 
 # ─── Main entry point ─────────────────────────────────────────────────────────
@@ -145,160 +161,144 @@ def render_video(
     artist:    str | None = None,
     workspace: str | None = None,
 ) -> bool:
-    """
-    Full render pipeline. Returns True on success, False on failure.
-
-    When called from master_controller, video_id / title / artist / workspace
-    are all provided — no DB query needed.
-
-    When called standalone (__main__), all args are None and the function
-    queries the DB for the next ASSETS_READY job.
-    """
-    print("\n🎬 BOOTING RENDER ENGINE...")
+    """Full render pipeline. Returns True on success, False on failure."""
+    log.info("\n🎬 BOOTING RENDER ENGINE...")
     db_manager.init_db()
 
     # ── 1. Resolve job details ────────────────────────────────────────────────
     if not (video_id and title and artist):
-        # Standalone mode — query DB
-        job = _get_ready_job()
+        job = _get_ready_job()   # Bug 5 fix: uses public function
         if not job:
-            print("💤 No songs in ASSETS_READY status. Nothing to render.")
+            log.info("💤 No ASSETS_READY songs. Nothing to render.")
             return False
         video_id, title, artist = job
-        workspace = None   # will be resolved by glob below
+        workspace = None
 
-    print(f"\n🚀 Rendering: {title}  —  {artist}  (ID: {video_id})")
+    log.info("🚀 Rendering: %s — %s  (ID: %s)", title, artist, video_id)
 
     # ── 2. Locate asset folder ────────────────────────────────────────────────
     asset_folder = _find_asset_folder(workspace, title)
     if not asset_folder:
-        print(f"❌ Asset folder not found for: {title}")
+        log.error("❌ Asset folder not found for: %s", title)
         return False
-    print(f"   📂 Asset folder: {asset_folder}")
+    log.info("   📂 Asset folder: %s", asset_folder)
 
-    # ── 3. Validate required files exist ─────────────────────────────────────
+    # ── 3. Validate required files ────────────────────────────────────────────
     metadata_path   = os.path.join(asset_folder, "metadata.json")
     timestamps_path = os.path.join(asset_folder, "timestamps.json")
     audio_path      = os.path.join(asset_folder, "audio.mp3")
 
-    missing = [p for p in [metadata_path, timestamps_path, audio_path] if not os.path.exists(p)]
+    missing = [p for p in (metadata_path, timestamps_path, audio_path) if not os.path.exists(p)]
     if missing:
         for m in missing:
-            print(f"   ❌ Missing required file: {m}")
+            log.error("   ❌ Missing: %s", m)
         return False
 
-    # ── 4. Load metadata (for rank) ───────────────────────────────────────────
+    # ── 4. Load metadata ──────────────────────────────────────────────────────
     try:
-        with open(metadata_path, "r", encoding="utf-8") as f:
-            meta = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        print(f"❌ Could not read metadata.json: {e}")
+        with open(metadata_path, "r", encoding="utf-8") as fh:
+            meta = json.load(fh)
+    except (json.JSONDecodeError, OSError) as exc:
+        log.error("❌ Could not read metadata.json: %s", exc)
         return False
 
     rank = int(meta.get("rank", 0))
 
-    # ── 5. Select background ──────────────────────────────────────────────────
+    # ── 5. Select background (Feature 7: honours pinned_bg setting) ───────────
     bg_source = _select_background(rank)
-    bg_index  = (max(0, rank - 1) % 30) + 1
-    print(f"   🖼️  Background: {bg_index}.jpg  (rank {rank})")
+    bg_index  = (max(0, rank - 1) % NUM_BACKGROUNDS) + 1
+    if "pinned" in bg_source:
+        log.info("   🖼️  Background: pinned custom image")
+    else:
+        log.info("   🖼️  Background: %d.jpg  (rank %d)", bg_index, rank)
 
     if not os.path.exists(bg_source):
-        print(f"❌ Background image not found: {bg_source}")
-        print(f"   Make sure Assets/backgrounds/{bg_index}.jpg exists.")
+        log.error("❌ Background image not found: %s", bg_source)
         return False
 
     # ── 6. Compute audio delay ────────────────────────────────────────────────
     audio_delay = _compute_audio_delay(timestamps_path)
+    first_lyric = _first_lyric_start(timestamps_path)
     if audio_delay > 0:
-        first_lyric = _first_lyric_start(timestamps_path)
-        print(f"   ⏱️  First lyric at {first_lyric:.2f}s → audio delayed by {audio_delay}s")
+        log.info("   ⏱️  First lyric at %.2fs → audio delayed %.3fs", first_lyric, audio_delay)
     else:
-        print(f"   ⏱️  First lyric >= 5s → no audio delay needed")
+        log.info("   ⏱️  First lyric at %.2fs ≥ 5s → no delay needed", first_lyric)
 
-    # ── 7. Stage files into video-engine/public/ ──────────────────────────────
+    # ── 7. Stage core assets ──────────────────────────────────────────────────
     os.makedirs(REACT_PUBLIC_DIR, exist_ok=True)
-    print("\n   📦 Staging assets into video-engine/public/...")
+    log.info("\n   📦 Staging assets → video-engine/public/...")
 
-    files_to_copy = {
+    for dest_name, src in {
         "audio.mp3":       audio_path,
         "timestamps.json": timestamps_path,
         "metadata.json":   metadata_path,
-    }
-    for dest_name, src_path in files_to_copy.items():
-        shutil.copy(src_path, os.path.join(REACT_PUBLIC_DIR, dest_name))
-        print(f"   ✅ {dest_name}")
+    }.items():
+        shutil.copy(src, os.path.join(REACT_PUBLIC_DIR, dest_name))
+        log.info("   ✅ %s", dest_name)
 
-    # Background → always named bg.jpg in public/
     shutil.copy(bg_source, os.path.join(REACT_PUBLIC_DIR, "bg.jpg"))
-    print(f"   ✅ bg.jpg  ({bg_index}.jpg)")
+    log.info("   ✅ bg.jpg")
 
-    # Logo — optional, warn but don't abort
-    if not os.path.exists(LOGO_PATH):
-        print(f"   ⚠️  logo.png not found at {LOGO_PATH} — rendering without logo")
-    else:
+    if os.path.exists(LOGO_PATH):
         shutil.copy(LOGO_PATH, os.path.join(REACT_PUBLIC_DIR, "logo.png"))
-        print(f"   ✅ logo.png")
+        log.info("   ✅ logo.png")
+    else:
+        log.warning("   ⚠️  logo.png not found — rendering without logo.")
 
-    # audioConfig.json — tells LyricVideo how many seconds to delay the <Audio>
-    audio_config = {"audioDelayInVideo": audio_delay}
-    with open(os.path.join(REACT_PUBLIC_DIR, "audioConfig.json"), "w") as f:
-        json.dump(audio_config, f, indent=2)
-    print(f"   ✅ audioConfig.json  (delay={audio_delay}s)")
+    with open(os.path.join(REACT_PUBLIC_DIR, "audioConfig.json"), "w") as fh:
+        json.dump({"audioDelayInVideo": audio_delay}, fh, indent=2)
+    log.info("   ✅ audioConfig.json  (delay=%.3fs)", audio_delay)
 
-    # ── 8. Run Remotion renderer ──────────────────────────────────────────────
+    # ── 8. Stage fonts + write fontConfig.json ────────────────────────────────
+    log.info("\n   🔤 Staging fonts...")
+    font_config = _stage_fonts()
+    with open(os.path.join(REACT_PUBLIC_DIR, "fontConfig.json"), "w") as fh:
+        json.dump(font_config, fh, indent=2)
+    log.info("   ✅ fontConfig.json")
+
+    active = [f"{r}={font_config[fk]}" for r, fk in
+              [("title","titleFontFile"),("artist","artistFontFile"),("lyrics","lyricsFontFile")]
+              if font_config[fk]]
+    log.info("   🔤 Active fonts: %s", ", ".join(active) if active else "none (using Inter fallback)")
+
+    # ── 9. Run Remotion renderer ──────────────────────────────────────────────
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-
     today      = datetime.now().strftime("%Y-%m-%d")
     safe_title = _clean_name(title)
-    out_name   = f"{today}-{safe_title}.mp4"
-    out_path   = os.path.abspath(os.path.join(OUTPUT_DIR, out_name))
+    out_path   = os.path.abspath(os.path.join(OUTPUT_DIR, f"{today}-{safe_title}.mp4"))
 
-    print(f"\n   🎞️  Rendering → {out_path}")
-    print("   (This may take several minutes...)\n")
+    log.info("\n   🎞️  Rendering → %s", out_path)
+    log.info("   (This may take several minutes...)\n")
 
-    use_shell = os.name == "nt"   # shell=True required for npx on Windows
-    command   = [
-        "npx", "remotion", "render",
-        "EchoForgeLyricVideo",
-        out_path,
-    ]
-
+    use_shell = os.name == "nt"
     try:
         subprocess.run(
-            command,
-            cwd=VIDEO_ENGINE_DIR,
-            check=True,
-            shell=use_shell,
+            ["npx", "remotion", "render", "EchoForgeLyricVideo", out_path],
+            cwd=VIDEO_ENGINE_DIR, check=True, shell=use_shell,
         )
-        print(f"\n✅ Render complete!  →  {out_path}")
+        log.info("\n✅ Render complete! → %s", out_path)
         db_manager.update_song_status(video_id, "VIDEO_CREATED")
         return True
-
-    except subprocess.CalledProcessError as e:
-        print(f"\n❌ Remotion render failed (exit code {e.returncode}).")
-        print("   Check the Remotion output above for details.")
+    except subprocess.CalledProcessError as exc:
+        log.error("\n❌ Remotion failed (exit code %d).", exc.returncode)
         return False
-
-    except Exception as e:
-        print(f"\n❌ Unexpected error during render: {e}")
-        import traceback
-        traceback.print_exc()
+    except Exception as exc:
+        log.error("\n❌ Unexpected render error: %s", exc)
         return False
 
 
-# ─── Internal helper ──────────────────────────────────────────────────────────
+# ─── CLI ──────────────────────────────────────────────────────────────────────
 
-def _first_lyric_start(path: str) -> float:
-    """Read the start time of the first lyric segment."""
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        segs = data.get("segments", [])
-        return segs[0].get("start", 0.0) if segs else 0.0
-    except Exception:
-        return 0.0
-
-
-# ─── Standalone ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    render_video()
+    parser = argparse.ArgumentParser(description="EchoForge Render Engine")
+    parser.add_argument("--video-id",  default=None)
+    parser.add_argument("--title",     default=None)
+    parser.add_argument("--artist",    default=None)
+    parser.add_argument("--workspace", default=None)
+    args = parser.parse_args()
+
+    ok = render_video(
+        video_id=args.video_id, title=args.title,
+        artist=args.artist,     workspace=args.workspace,
+    )
+    print("\nRender:", "SUCCESS" if ok else "FAILED")

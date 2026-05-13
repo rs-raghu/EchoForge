@@ -11,11 +11,15 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+
+from logger import get_logger
+log = get_logger(__name__)
+
 def scrape_top_50():
     """
     Scrapes the top 50 songs from YouTube's Global Weekly Charts.
     """
-    print("🤖 Launching Headless Browser...")
+    log.info("🤖 Launching Headless Browser...")
 
     chrome_options = Options()
     chrome_options.add_argument("--headless=new") 
@@ -30,7 +34,7 @@ def scrape_top_50():
     url = "https://charts.youtube.com/charts/TopSongs/global/weekly"
     
     try:
-        print(f"🌍 Navigating to: {url}")
+        log.info(f"🌍 Navigating to: {url}")
         driver.get(url)
         
         WebDriverWait(driver, 15).until(
@@ -41,12 +45,12 @@ def scrape_top_50():
         html_content = driver.page_source
 
     except Exception as e:
-        print(f"❌ Error fetching page: {e}")
+        log.error(f"❌ Error fetching page: {e}")
         return None
     finally:
         driver.quit()
 
-    print("✅ Data received. Parsing HTML...")
+    log.info("✅ Data received. Parsing HTML...")
     soup = BeautifulSoup(html_content, 'html.parser')
     rows = soup.find_all('ytmc-entry-row')
     
@@ -106,10 +110,10 @@ def scrape_top_50():
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(top_50_songs, f, indent=4, ensure_ascii=False)
             
-        print(f"\n🎉 Success! Extracted {len(top_50_songs)} songs.")
-        print(f"💾 Saved to: {output_file}")
+        log.info(f"\n🎉 Success! Extracted {len(top_50_songs)} songs.")
+        log.info(f"💾 Saved to: {output_file}")
     else:
-        print("\n❌ Failed to extract any songs.")
+        log.error("\n❌ Failed to extract any songs.")
 
     return top_50_songs
 

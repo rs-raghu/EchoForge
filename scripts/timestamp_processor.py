@@ -22,19 +22,22 @@ STRATEGY:
 import json
 import os
 import re
+from config import (
+
+
+    FILLER_SOUNDS, MIN_WORDS_STANDALONE,
+    LOOK_AHEAD_BASE, LOOK_AHEAD_PER_WORD, LOOK_AHEAD_PER_MISS, MIN_MATCH_RATIO,
+    MIN_SEGMENT_DURATION, MIN_SEGMENT_GAP,
+)
+
+from logger import get_logger
+log = get_logger(__name__)
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CONFIG
+# CONFIG — all constants imported from config.py
 # ─────────────────────────────────────────────────────────────────────────────
-
-FILLER_SOUNDS = {
-    "oh", "ah", "uh", "eh", "mm", "hmm", "hm", "na", "la", "da",
-    "ooh", "aah", "ayy", "aye", "hey", "hah", "yeah", "yea", "ya",
-    "woo", "whoa", "woah", "no", "oo", "du", "de", "huh"
-}
-MIN_WORDS_STANDALONE = 3
-LOOK_AHEAD           = 8   # Max words to skip when searching for a match
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -44,6 +47,78 @@ LOOK_AHEAD           = 8   # Max words to skip when searching for a match
 def _norm(s: str) -> str:
     """Normalize a word: lowercase, strip all non-alphanumeric characters."""
     return re.sub(r'[^\w]', '', s.lower())
+def _fill_word_timestamps(
+    expected_words: list,
+    word_ts: list,
+    seg_start: float,
+    seg_end: float,
+) -> list:
+    """
+    Returns a complete word-timestamp list the same length as expected_words.
+
+    word_ts is a parallel list:
+      - Non-None entry: {"word": str, "start": float, "end": float}  (Whisper matched)
+      - None entry    : word Whisper missed — timing will be interpolated
+
+    Interpolation strategy:
+      Between two matched anchors → distribute missing words linearly in the
+        gap between left_anchor.end and right_anchor.start.
+      Before the first anchor     → distribute from seg_start to anchor.start.
+      After the last anchor       → distribute from anchor.end to seg_end.
+      No anchors at all           → distribute all words evenly across the segment.
+    """
+    n = len(expected_words)
+    result = list(word_ts)           # shallow copy
+
+    anchors = [(i, wt) for i, wt in enumerate(result) if wt is not None]
+
+    def _spread(words_slice, t_start, t_end):
+        """Distribute word_slice evenly from t_start to t_end."""
+        k = len(words_slice)
+        if k == 0:
+            return []
+        step = (t_end - t_start) / k
+        return [
+            {
+                "word":  words_slice[j],
+                "start": round(t_start + j * step, 3),
+                "end":   round(t_start + (j + 1) * step, 3),
+            }
+            for j in range(k)
+        ]
+
+    if not anchors:
+        # No Whisper matches at all — spread evenly across the whole segment
+        filled = _spread(expected_words, seg_start, seg_end)
+        return filled
+
+    # ── Before the first anchor ───────────────────────────────────────────────
+    first_i, first_wt = anchors[0]
+    if first_i > 0:
+        pre = _spread(expected_words[:first_i], seg_start, first_wt["start"])
+        for j, entry in enumerate(pre):
+            result[j] = entry
+
+    # ── Between consecutive anchors ───────────────────────────────────────────
+    for k in range(len(anchors) - 1):
+        left_i,  left_wt  = anchors[k]
+        right_i, right_wt = anchors[k + 1]
+        gap_indices = list(range(left_i + 1, right_i))
+        if gap_indices:
+            gap_words = [expected_words[gi] for gi in gap_indices]
+            filled    = _spread(gap_words, left_wt["end"], right_wt["start"])
+            for j, gi in enumerate(gap_indices):
+                result[gi] = filled[j]
+
+    # ── After the last anchor ─────────────────────────────────────────────────
+    last_i, last_wt = anchors[-1]
+    if last_i < n - 1:
+        post_words = expected_words[last_i + 1:]
+        post       = _spread(post_words, last_wt["end"], seg_end)
+        for j, entry in enumerate(post):
+            result[last_i + 1 + j] = entry
+
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -64,7 +139,7 @@ def parse_lyrics_txt(txt_path: str) -> list:
         raw = f.read()
 
     lines = [l.strip() for l in raw.split('\n') if l.strip()]
-    print(f"  Parsed {len(lines)} lyric lines from lyrics.txt")
+    log.info(f"  Parsed {len(lines)} lyric lines from lyrics.txt")
     return [{"text": l} for l in lines]
 
 
@@ -87,7 +162,7 @@ def parse_lrc_file(lrc_path: str) -> list:
     matches = ts_re.findall(raw)
 
     if not matches:
-        print("WARNING: No LRC timestamps found.")
+        log.info("WARNING: No LRC timestamps found.")
         return []
 
     def to_sec(mm, ss, cs):
@@ -103,7 +178,7 @@ def parse_lrc_file(lrc_path: str) -> list:
                     "text":      sub,
                 })
 
-    print(f"  Parsed {len(lines)} lyric lines from lyrics.lrc (fallback)")
+    log.info(f"  Parsed {len(lines)} lyric lines from lyrics.lrc (fallback)")
     return lines
 
 
@@ -133,28 +208,29 @@ def extract_all_words(data: dict) -> list:
 
 def build_segments_from_txt(lyric_lines: list, all_words: list) -> list:
     """
-    Maps Whisper word timestamps to lyric lines via greedy sequence matching.
-
-    Why sequence matching instead of time-window matching?
-      Time-window matching breaks badly when Whisper's segment boundaries
-      don't align with the lyric lines (very common with K-pop, ad-libs,
-      romanized text, or any non-standard pronunciation).
+    Maps Whisper word timestamps to lyric lines via greedy sequence matching,
+    and attaches per-word timing to each segment for karaoke highlighting.
 
     Algorithm:
       - Maintain a global pointer `wi` into all_words.
       - For each lyric line, tokenize its words.
-      - Scan forward from `wi`, allowing up to LOOK_AHEAD skips, to find
-        each token in the Whisper word list.
+      - Scan forward from `wi`, allowing a dynamic LOOK_AHEAD window, to match
+        each expected word to a Whisper word.
+      - Track which expected word index each match corresponds to so missed
+        words can be interpolated later.
       - seg.start = first matched word's start time.
         seg.end   = last matched word's end time.
-      - Unmatched lines get estimated timing from their neighbors.
+      - _fill_word_timestamps() interpolates timing for any missed words.
+      - Unmatched lines (ratio < MIN_MATCH_RATIO) fall back to time-estimation
+        and get evenly-distributed word timings across the estimated window.
 
     Args:
         lyric_lines : [{"text": str}, ...]
         all_words   : [{"word": str, "start": float, "end": float}, ...]
 
     Returns:
-        [{"text": str, "start": float, "end": float}, ...]
+        [{"text": str, "start": float, "end": float,
+          "words": [{"word": str, "start": float, "end": float}]}, ...]
     """
     wi = 0
     segments = []
@@ -165,35 +241,69 @@ def build_segments_from_txt(lyric_lines: list, all_words: list) -> list:
 
         if not expected:
             last_end = segments[-1]["end"] if segments else 0.0
-            segments.append({"text": line_text, "start": last_end, "end": last_end + 0.5})
+            segments.append({
+                "text":  line_text,
+                "start": last_end,
+                "end":   last_end + 0.5,
+                "words": [],
+            })
             continue
 
-        matched  = []
+        # word_ts[i] = matched Whisper entry for expected[i], or None if missed
+        word_ts  = [None] * len(expected)
+        matched  = []   # all successfully matched entries (for seg timing)
         temp_wi  = wi
+        misses   = 0
 
-        for exp_w in expected:
+        for ei, exp_w in enumerate(expected):
             exp_norm = _norm(exp_w)
-            limit    = min(temp_wi + LOOK_AHEAD, len(all_words))
+
+            window = LOOK_AHEAD_BASE + len(expected) * LOOK_AHEAD_PER_WORD + misses * LOOK_AHEAD_PER_MISS
+            limit  = min(temp_wi + window, len(all_words))
+
+            found = False
             for k in range(temp_wi, limit):
                 if _norm(all_words[k]["word"]) == exp_norm:
+                    entry = {
+                        "word":  exp_w,                    # use lyrics.txt text
+                        "start": all_words[k]["start"],
+                        "end":   all_words[k]["end"],
+                    }
+                    word_ts[ei] = entry
                     matched.append(all_words[k])
                     temp_wi = k + 1
+                    found   = True
                     break
-            # If no match: Whisper mis-heard or skipped — continue anyway
 
-        if matched:
+            if not found:
+                misses += 1
+
+        match_ratio = len(matched) / len(expected) if expected else 0.0
+
+        if matched and match_ratio >= MIN_MATCH_RATIO:
             wi        = temp_wi
             seg_start = matched[0]["start"]
             seg_end   = matched[-1]["end"]
         else:
-            # Fallback: estimate from previous segment
+            if matched and match_ratio < MIN_MATCH_RATIO:
+                log.info(
+                    f"  ⚠️  Low match ratio ({match_ratio:.0%}) for "
+                    f'"{line_text[:40]}" — using time estimate, not advancing pointer.'
+                )
             seg_start = segments[-1]["end"] if segments else 0.0
             seg_end   = seg_start + max(0.5, len(expected) * 0.35)
 
+        seg_start = round(seg_start, 3)
+        seg_end   = round(seg_end,   3)
+
+        # Fill interpolated timing for any missed words
+        words = _fill_word_timestamps(expected, word_ts, seg_start, seg_end)
+
         segments.append({
             "text":  line_text,
-            "start": round(seg_start, 3),
-            "end":   round(seg_end,   3),
+            "start": seg_start,
+            "end":   seg_end,
+            "words": words,
         })
 
     return segments
@@ -262,6 +372,7 @@ def merge_filler_segments(segments: list) -> list:
                     "text":  seg["text"] + " " + nxt["text"],
                     "start": seg["start"],
                     "end":   nxt["end"],
+                    "words": (seg.get("words") or []) + (nxt.get("words") or []),
                 }
                 merged.pop(i)
             elif i > 0:
@@ -270,12 +381,116 @@ def merge_filler_segments(segments: list) -> list:
                     "text":  prv["text"] + " " + seg["text"],
                     "start": prv["start"],
                     "end":   seg["end"],
+                    "words": (prv.get("words") or []) + (seg.get("words") or []),
                 }
                 merged.pop(i)
                 i -= 1
         else:
             i += 1
     return merged
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 5 — TIMESTAMP SANITY VALIDATION & AUTO-FIX
+# ─────────────────────────────────────────────────────────────────────────────
+
+# MIN_SEGMENT_DURATION and MIN_SEGMENT_GAP are imported from config.py
+
+
+def validate_and_fix_segments(segments: list) -> list:
+    """
+    Audits every segment for four classes of bad timestamps produced by
+    Whisper or the fallback estimators, and fixes each one in-place.
+
+    Problems detected and corrected (in order):
+
+    1. Negative start  — clamp start to 0.0.
+       Cause: Whisper occasionally returns a word at t < 0.
+
+    2. Backwards segment  — end <= start.
+       Fix: set end = start + estimated_duration based on word count.
+       Cause: Whisper word boundaries can cross when speech is very fast.
+
+    3. Overlap with next segment  — seg[i].end > seg[i+1].start.
+       Fix: clip seg[i].end = seg[i+1].start - MIN_SEGMENT_GAP.
+       Cause: sequence matching sometimes assigns the same timestamp region
+       to two consecutive lines.
+
+    4. Zero / sub-minimum duration after all fixes  — end - start < MIN_SEGMENT_DURATION.
+       Fix: extend end = start + MIN_SEGMENT_DURATION.
+       Cause: can result from the overlap clip above on very tight segments.
+
+    All fixes are logged with the line text so you can spot patterns.
+    The list is modified in-place AND returned for convenience.
+    """
+    fixed_negative  = 0
+    fixed_backwards = 0
+    fixed_overlaps  = 0
+    fixed_short     = 0
+
+    for i, seg in enumerate(segments):
+        label = f"  [{i}] \"{seg['text'][:40]}\""
+
+        # ── Fix 1: negative start ─────────────────────────────────────────────
+        if seg["start"] < 0.0:
+            log.warning(f"⚠️  Negative start {seg['start']:.3f}s clamped to 0.0 {label}")
+            seg["start"] = 0.0
+            fixed_negative += 1
+
+        # ── Fix 2: backwards segment (end <= start) ───────────────────────────
+        if seg["end"] <= seg["start"]:
+            word_count   = max(1, len(seg["text"].split()))
+            estimated    = round(word_count * 0.4, 3)   # ~0.4 s per word
+            new_end      = round(seg["start"] + estimated, 3)
+            log.info(
+                f"⚠️  Backwards segment [{seg['start']:.3f}s → {seg['end']:.3f}s] "
+                f"fixed → end={new_end:.3f}s {label}"
+            )
+            seg["end"]  = new_end
+            fixed_backwards += 1
+
+        # ── Fix 3: overlap with the next segment ──────────────────────────────
+        if i + 1 < len(segments):
+            next_start = segments[i + 1]["start"]
+            if seg["end"] > next_start - MIN_SEGMENT_GAP:
+                clipped = round(next_start - MIN_SEGMENT_GAP, 3)
+                if clipped > seg["start"]:   # only clip if it leaves some duration
+                    log.info(
+                        f"⚠️  Overlap: seg[{i}].end {seg['end']:.3f}s > "
+                        f"seg[{i+1}].start {next_start:.3f}s — "
+                        f"clipped to {clipped:.3f}s {label}"
+                    )
+                    seg["end"]     = clipped
+                    fixed_overlaps += 1
+
+        # ── Fix 4: sub-minimum duration (may result from Fix 3) ───────────────
+        if seg["end"] - seg["start"] < MIN_SEGMENT_DURATION:
+            # Don't extend past the next segment's start
+            max_end = (
+                round(segments[i + 1]["start"] - MIN_SEGMENT_GAP, 3)
+                if i + 1 < len(segments)
+                else seg["start"] + MIN_SEGMENT_DURATION
+            )
+            new_end = min(round(seg["start"] + MIN_SEGMENT_DURATION, 3), max_end)
+            if new_end > seg["end"]:
+                log.info(
+                    f"⚠️  Short segment ({seg['end'] - seg['start']:.3f}s) "
+                    f"extended to {new_end - seg['start']:.3f}s {label}"
+                )
+                seg["end"]  = new_end
+                fixed_short += 1
+
+    total = fixed_negative + fixed_backwards + fixed_overlaps + fixed_short
+    if total == 0:
+        log.info("✅ Timestamp validation passed — no issues found.")
+    else:
+        log.info(
+            f"🔧 Timestamp validation fixed {total} issue(s): "
+            f"{fixed_negative} negative, {fixed_backwards} backwards, "
+            f"{fixed_overlaps} overlaps, {fixed_short} short."
+        )
+
+    return segments
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -303,10 +518,10 @@ def process_timestamps(workspace_folder: str) -> str | None:
     word_json_path = None
     if os.path.exists(raw_json):
         word_json_path = raw_json
-        print(f"Using word-level data from: timestamps_raw.json")
+        log.info(f"Using word-level data from: timestamps_raw.json")
     elif os.path.exists(ts_json):
         word_json_path = ts_json
-        print(f"Using word-level data from: timestamps.json")
+        log.info(f"Using word-level data from: timestamps.json")
 
     # ── Load word-level data ──────────────────────────────────────────────────
     all_words = []
@@ -314,23 +529,23 @@ def process_timestamps(workspace_folder: str) -> str | None:
         with open(word_json_path, 'r', encoding='utf-8') as f:
             raw_data = json.load(f)
         all_words = extract_all_words(raw_data)
-        print(f"  Extracted {len(all_words)} word timestamps from Whisper JSON.")
+        log.info(f"  Extracted {len(all_words)} word timestamps from Whisper JSON.")
     else:
-        print("  No Whisper JSON found — will use LRC timestamps directly.")
+        log.info("  No Whisper JSON found — will use LRC timestamps directly.")
 
     # ── Choose line source and build segments ─────────────────────────────────
     segments = None
 
     if os.path.exists(txt_path) and all_words:
         # BEST PATH: lyrics.txt lines + Whisper word timestamps
-        print("\nStrategy: lyrics.txt (line authority) + Whisper sequence matching")
+        log.info("\nStrategy: lyrics.txt (line authority) + Whisper sequence matching")
         lyric_lines = parse_lyrics_txt(txt_path)
         if lyric_lines:
             segments = build_segments_from_txt(lyric_lines, all_words)
 
     if segments is None and os.path.exists(lrc_path) and all_words:
         # GOOD PATH: LRC lines + Whisper word timestamps
-        print("\nStrategy: lyrics.lrc (line authority) + Whisper sequence matching")
+        log.info("\nStrategy: lyrics.lrc (line authority) + Whisper sequence matching")
         lrc_lines = parse_lrc_file(lrc_path)
         if lrc_lines:
             # Convert to the same dict format expected by build_segments_from_txt
@@ -339,13 +554,13 @@ def process_timestamps(workspace_folder: str) -> str | None:
 
     if segments is None and os.path.exists(lrc_path):
         # FALLBACK: LRC timestamps only (pre-synced .lrc from syncedlyrics)
-        print("\nStrategy: lyrics.lrc timestamps only (no word-level data)")
+        log.info("\nStrategy: lyrics.lrc timestamps only (no word-level data)")
         lrc_lines = parse_lrc_file(lrc_path)
         if lrc_lines:
             segments = build_segments_from_lrc(lrc_lines)
 
     if not segments:
-        print("ERROR: Could not produce any segments. Check that lyrics.txt or lyrics.lrc exists.")
+        log.info("ERROR: Could not produce any segments. Check that lyrics.txt or lyrics.lrc exists.")
         return None
 
     # ── Merge filler segments ─────────────────────────────────────────────────
@@ -353,25 +568,32 @@ def process_timestamps(workspace_folder: str) -> str | None:
     segments = merge_filler_segments(segments)
     after    = len(segments)
     if before != after:
-        print(f"  Merged {before - after} filler segment(s). Final count: {after}")
+        log.info(f"  Merged {before - after} filler segment(s). Final count: {after}")
+
+    # ── Validate and fix timestamps ───────────────────────────────────────────
+    # Runs after filler merging so we validate the final shape the renderer
+    # will actually see — not intermediate segments that will be merged away.
+    log.info("\n── Timestamp Validation ────────────────────────────────────────")
+    segments = validate_and_fix_segments(segments)
+    log.debug("────────────────────────────────────────────────────────────────")
 
     # ── Backup original timestamps.json if it has not been backed up yet ──────
     if os.path.exists(ts_json) and not os.path.exists(raw_json):
         backup = ts_json.replace(".json", "_raw.json")
         import shutil
         shutil.copy(ts_json, backup)
-        print(f"  Backed up original timestamps.json → timestamps_raw.json")
+        log.info(f"  Backed up original timestamps.json → timestamps_raw.json")
 
     # ── Write clean output ────────────────────────────────────────────────────
     with open(ts_json, 'w', encoding='utf-8') as f:
         json.dump({"segments": segments}, f, indent=2, ensure_ascii=False)
-    print(f"\n✅ timestamps.json updated: {after} line-level segments → {ts_json}")
+    log.info(f"\n✅ timestamps.json updated: {after} line-level segments → {ts_json}")
 
     # ── Preview ───────────────────────────────────────────────────────────────
-    print("\n── Preview (first 8 segments) ──────────────────────────────────")
+    log.info("\n── Preview (first 8 segments) ──────────────────────────────────")
     for seg in segments[:8]:
-        print(f"  [{seg['start']:.2f}s → {seg['end']:.2f}s]  {seg['text']}")
-    print("────────────────────────────────────────────────────────────────\n")
+        log.debug(f"  [{seg['start']:.2f}s → {seg['end']:.2f}s]  {seg['text']}")
+    log.debug("────────────────────────────────────────────────────────────────\n")
 
     return ts_json
 

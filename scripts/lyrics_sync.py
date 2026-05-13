@@ -5,6 +5,17 @@ import json
 import shutil
 import subprocess
 import stable_whisper
+from config import (
+
+
+    DEMUCS_MODEL, AUDIO_BITRATE,
+    WHISPER_MODEL,
+    LOOK_AHEAD_BASE, LOOK_AHEAD_PER_WORD, LOOK_AHEAD_PER_MISS, MIN_MATCH_RATIO,
+)
+
+from logger import get_logger
+log = get_logger(__name__)
+
 
 # ============================================================
 # STEP 1: VOCAL ISOLATION
@@ -19,12 +30,12 @@ def isolate_vocals(audio_path: str, workspace_dir: str) -> str | None:
     vocals_path = os.path.join(workspace_dir, "vocals.mp3")
 
     if os.path.exists(vocals_path):
-        print(f"⏭️ vocals.mp3 already exists. Skipping Demucs.")
+        log.info(f"⏭️ vocals.mp3 already exists. Skipping Demucs.")
         return vocals_path
 
-    print(f"🎙️ Starting Demucs vocal isolation...")
-    print(f"   Input : {audio_path}")
-    print(f"   ⏳ This will take a few minutes on CPU — hang tight...")
+    log.info(f"🎙️ Starting Demucs vocal isolation...")
+    log.info(f"   Input : {audio_path}")
+    log.info(f"   ⏳ This will take a few minutes on CPU — hang tight...")
 
     try:
         result = subprocess.run(
@@ -32,8 +43,8 @@ def isolate_vocals(audio_path: str, workspace_dir: str) -> str | None:
                 "python", "-m", "demucs",
                 "--two-stems", "vocals",
                 "--mp3",
-                "--mp3-bitrate", "192",
-                "-n", "htdemucs",
+                "--mp3-bitrate", AUDIO_BITRATE,
+                f"-n", DEMUCS_MODEL,
                 "-o", workspace_dir,
                 audio_path
             ],
@@ -42,24 +53,24 @@ def isolate_vocals(audio_path: str, workspace_dir: str) -> str | None:
         )
 
         if result.returncode != 0:
-            print(f"❌ Demucs failed:\n{result.stderr}")
+            log.error(f"❌ Demucs failed:\n{result.stderr}")
             return None
 
-        pattern = os.path.join(workspace_dir, "htdemucs", "**", "vocals.mp3")
+        pattern = os.path.join(workspace_dir, DEMUCS_MODEL, "**", "vocals.mp3")
         matches = glob.glob(pattern, recursive=True)
 
         if not matches:
-            print(f"❌ Demucs ran but vocals.mp3 not found.")
+            log.error(f"❌ Demucs ran but vocals.mp3 not found.")
             return None
 
         os.rename(matches[0], vocals_path)
-        shutil.rmtree(os.path.join(workspace_dir, "htdemucs"), ignore_errors=True)
+        shutil.rmtree(os.path.join(workspace_dir, DEMUCS_MODEL), ignore_errors=True)
 
-        print(f"✅ Vocal stem saved to: {vocals_path}")
+        log.info(f"✅ Vocal stem saved to: {vocals_path}")
         return vocals_path
 
     except Exception as e:
-        print(f"❌ Demucs isolation crashed: {e}")
+        log.error(f"❌ Demucs isolation crashed: {e}")
         return None
 
 
@@ -119,8 +130,9 @@ def _sequence_match_lines(lyric_lines: list, all_words: list) -> list:
     Returns:
         [{"text": str, "start": float, "end": float}, ...]
     """
-    LOOK_AHEAD = 8   # Max words to skip when searching for a match
-    wi = 0           # Current position in all_words
+    # Dynamic LOOK_AHEAD — imported from config.py
+
+    wi = 0   # Current position in all_words
     segments = []
 
     for line in lyric_lines:
@@ -132,28 +144,43 @@ def _sequence_match_lines(lyric_lines: list, all_words: list) -> list:
             segments.append({"text": line_text, "start": last_end, "end": last_end + 0.5})
             continue
 
-        matched   = []
-        temp_wi   = wi
+        matched  = []
+        temp_wi  = wi
+        misses   = 0   # words Whisper failed to match in this line
 
         for exp_w in expected:
             exp_norm = _norm(exp_w)
-            found    = False
-            limit    = min(temp_wi + LOOK_AHEAD, len(all_words))
+
+            # Dynamic window: wider for longer lines and grows with each miss.
+            window = LOOK_AHEAD_BASE + len(expected) * LOOK_AHEAD_PER_WORD + misses * LOOK_AHEAD_PER_MISS
+            limit  = min(temp_wi + window, len(all_words))
+
+            found = False
             for k in range(temp_wi, limit):
                 if _norm(all_words[k]["word"]) == exp_norm:
                     matched.append(all_words[k])
                     temp_wi = k + 1
                     found   = True
                     break
-            if not found:
-                # Whisper skipped or mis-heard this word — keep moving
-                pass
 
-        if matched:
+            if not found:
+                misses += 1   # widen window for the next word
+
+        # Commit guard: only advance the global pointer when enough words
+        # matched.  A sparse match means the pointer likely drifted — fall
+        # back to estimation and retry from the same wi position next line.
+        match_ratio = len(matched) / len(expected) if expected else 0.0
+
+        if matched and match_ratio >= MIN_MATCH_RATIO:
             wi        = temp_wi
             seg_start = matched[0]["start"]
             seg_end   = matched[-1]["end"]
         else:
+            if matched and match_ratio < MIN_MATCH_RATIO:
+                log.info(
+                    f"  \u26a0\ufe0f  Low match ratio ({match_ratio:.0%}) for "
+                    f"\"{line_text[:40]}\" — using time estimate."
+                )
             # Fallback: estimate based on previous segment
             seg_start = segments[-1]["end"] if segments else 0.0
             seg_end   = seg_start + max(0.5, len(expected) * 0.35)
@@ -190,11 +217,11 @@ def _build_lrc_and_timestamps(
     ]
 
     if not lyric_lines:
-        print("❌ lyrics.txt is empty — nothing to match.")
+        log.error("❌ lyrics.txt is empty — nothing to match.")
         return []
 
-    print(f"   📝 {len(lyric_lines)} lyric lines loaded from lyrics.txt")
-    print(f"   🔤 {len(all_words)} word timestamps from Whisper")
+    log.debug(f"   📝 {len(lyric_lines)} lyric lines loaded from lyrics.txt")
+    log.debug(f"   🔤 {len(all_words)} word timestamps from Whisper")
 
     # Sequence match
     segments = _sequence_match_lines(lyric_lines, all_words)
@@ -203,12 +230,12 @@ def _build_lrc_and_timestamps(
     lrc_lines = [f"{_seconds_to_lrc_ts(seg['start'])} {seg['text']}" for seg in segments]
     with open(lrc_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lrc_lines))
-    print(f"✅ LRC written: {len(lrc_lines)} lines → {lrc_path}")
+    log.info(f"✅ LRC written: {len(lrc_lines)} lines → {lrc_path}")
 
     # ── Write timestamps.json ─────────────────────────────────────────────────
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump({"segments": segments}, f, indent=2, ensure_ascii=False)
-    print(f"✅ timestamps.json written: {len(segments)} segments → {json_path}")
+    log.info(f"✅ timestamps.json written: {len(segments)} segments → {json_path}")
 
     return segments
 
@@ -240,32 +267,32 @@ def align_lyrics(vocals_path: str, lyrics_path: str, workspace_dir: str) -> str 
     raw_json_path = os.path.join(workspace_dir, "timestamps_raw.json")
     json_path     = os.path.join(workspace_dir, "timestamps.json")
 
-    print(f"\n🧠 Loading Whisper model for forced alignment...")
-    print(f"   Vocals : {vocals_path}")
-    print(f"   Lyrics : {lyrics_path}")
+    log.info(f"\n🧠 Loading Whisper model for forced alignment...")
+    log.info(f"   Vocals : {vocals_path}")
+    log.info(f"   Lyrics : {lyrics_path}")
 
     try:
         with open(lyrics_path, 'r', encoding='utf-8') as f:
             target_text = f.read()
 
         if not target_text.strip():
-            print("❌ lyrics.txt is empty — nothing to align.")
+            log.error("❌ lyrics.txt is empty — nothing to align.")
             return None
 
-        model = stable_whisper.load_model('large-v2')
+        model = stable_whisper.load_model(WHISPER_MODEL)
 
-        print(f"⏱️ Aligning lyrics to vocals... (CPU mode — be patient)")
+        log.info(f"⏱️ Aligning lyrics to vocals... (CPU mode — be patient)")
         # Run forced alignment — returns word-level timestamps per segment
         result = model.align(vocals_path, target_text, language='en')
 
         # ── Save raw word-level JSON as backup ────────────────────────────────
         result.save_as_json(raw_json_path)
-        print(f"💾 Raw word-level data saved to: {raw_json_path}")
+        log.info(f"💾 Raw word-level data saved to: {raw_json_path}")
 
         # ── Extract flat word list ────────────────────────────────────────────
         all_words = _extract_words_from_result(result)
         if not all_words:
-            print("⚠️ Whisper returned no word-level timestamps. Alignment may be poor.")
+            log.warning("⚠️ Whisper returned no word-level timestamps. Alignment may be poor.")
 
         # ── Build LRC + timestamps.json using lyrics.txt as line authority ────
         segments = _build_lrc_and_timestamps(
@@ -276,21 +303,21 @@ def align_lyrics(vocals_path: str, lyrics_path: str, workspace_dir: str) -> str 
         )
 
         if not segments:
-            print("❌ No segments produced. Check lyrics.txt content.")
+            log.error("❌ No segments produced. Check lyrics.txt content.")
             return None
 
         # Preview
-        print("\n── Alignment Preview (first 8 lines) ───────────────────────")
+        log.info("\n── Alignment Preview (first 8 lines) ───────────────────────")
         for seg in segments[:8]:
-            print(f"  [{seg['start']:.2f}s → {seg['end']:.2f}s]  {seg['text']}")
-        print("────────────────────────────────────────────────────────────\n")
+            log.debug(f"  [{seg['start']:.2f}s → {seg['end']:.2f}s]  {seg['text']}")
+        log.debug("────────────────────────────────────────────────────────────\n")
 
-        print(f"✅ Alignment complete! LRC → {lrc_path}")
-        print(f"✅ Timestamps  ready! JSON → {json_path}")
+        log.info(f"✅ Alignment complete! LRC → {lrc_path}")
+        log.info(f"✅ Timestamps  ready! JSON → {json_path}")
         return lrc_path
 
     except Exception as e:
-        print(f"❌ Whisper alignment crashed: {e}")
+        log.error(f"❌ Whisper alignment crashed: {e}")
         return None
 
 
@@ -304,17 +331,17 @@ def sync_lyrics(audio_path: str, lyrics_path: str, workspace_dir: str) -> str | 
       1. Demucs  → isolate vocals → vocals.mp3
       2. Whisper → force-align lyrics.txt to vocals → lyrics.lrc + timestamps.json
     """
-    print("\n🎚️ SYNC ENGINE STARTING...")
+    log.info("\n🎚️ SYNC ENGINE STARTING...")
 
     vocals_path = isolate_vocals(audio_path, workspace_dir)
     if not vocals_path:
-        print("❌ Sync Engine aborted: vocal isolation failed.")
+        log.error("❌ Sync Engine aborted: vocal isolation failed.")
         return None
 
     lrc_path = align_lyrics(vocals_path, lyrics_path, workspace_dir)
     if not lrc_path:
-        print("❌ Sync Engine aborted: forced alignment failed.")
+        log.error("❌ Sync Engine aborted: forced alignment failed.")
         return None
 
-    print(f"\n✅ SYNC ENGINE COMPLETE → {lrc_path}")
+    log.info(f"\n✅ SYNC ENGINE COMPLETE → {lrc_path}")
     return lrc_path
