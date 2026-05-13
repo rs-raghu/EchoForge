@@ -37,9 +37,9 @@ GENIUS_TOKEN  = os.getenv("GENIUS_ACCESS_TOKEN")
 ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 LLM_MAX_LINE = 35
-LLM_MODEL    = "claude-sonnet-4-20250514"
-LLM_ENDPOINT = "https://api.anthropic.com/v1/messages"
-LLM_TIMEOUT  = 60
+LLM_MODEL    = "qwen2.5:7b"
+LLM_ENDPOINT = "http://localhost:11434/api/generate"
+LLM_TIMEOUT  = None 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -205,10 +205,6 @@ def _needs_formatting(text: str) -> bool:
 
 
 def _call_llm_formatter(raw_content: str, file_type: str) -> str | None:
-    if not ANTHROPIC_KEY:
-        log.warning("⚠️  ANTHROPIC_API_KEY not set — skipping LLM formatter.")
-        return None
-
     if file_type == "lrc":
         format_rules = (
             "The input is an LRC file with lines like `[mm:ss.cc] lyric text`.\n"
@@ -236,26 +232,28 @@ def _call_llm_formatter(raw_content: str, file_type: str) -> str | None:
         f"--- INPUT ---\n{raw_content}\n--- END INPUT ---"
     )
 
-    headers = {
-        "x-api-key":         ANTHROPIC_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type":      "application/json",
-    }
     body = {
-        "model":      LLM_MODEL,
-        "max_tokens": 4096,
-        "messages":   [{"role": "user", "content": prompt}],
+        "model":  LLM_MODEL,
+        "prompt": prompt,
+        "stream": False
     }
 
     try:
-        log.info("🤖 Calling LLM formatter (model: %s)...", LLM_MODEL)
-        resp = requests.post(LLM_ENDPOINT, json=body, headers=headers, timeout=LLM_TIMEOUT)
+        log.info("🤖 Calling local LLM formatter (model: %s)...", LLM_MODEL)
+        log.info("⏳ Processing song... (No time limit, this may take a while depending on your hardware)")
+        
+        resp = requests.post(LLM_ENDPOINT, json=body, timeout=LLM_TIMEOUT)
         resp.raise_for_status()
-        result = resp.json()["content"][0]["text"].strip()
+        
+        result = resp.json().get("response", "").strip()
         log.info("✅ LLM formatter returned %d chars.", len(result))
         return result
+        
+    except requests.exceptions.ConnectionError:
+        log.error("❌ Failed to connect to local LLM. Is Ollama running (`ollama serve`)?")
+        return None
     except Exception as exc:
-        log.warning("⚠️  LLM formatter failed: %s — using original content.", exc)
+        log.warning("⚠️ Local LLM formatter failed: %s — using original content.", exc)
         return None
 
 

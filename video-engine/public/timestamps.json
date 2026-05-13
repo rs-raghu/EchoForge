@@ -2,12 +2,12 @@
   "segments": [
     {
       "text": "Ho, manne sambh-sambh rakhe tere jhanjhara ke jode",
-      "start": 6.46,
+      "start": 6.44,
       "end": 9.71,
       "words": [
         {
           "word": "Ho,",
-          "start": 6.46,
+          "start": 6.44,
           "end": 6.5
         },
         {
@@ -60,11 +60,11 @@
         {
           "word": "gel",
           "start": 10.34,
-          "end": 10.66
+          "end": 10.64
         },
         {
           "word": "ro-ro",
-          "start": 10.66,
+          "start": 10.64,
           "end": 11.1
         },
         {
@@ -122,16 +122,16 @@
         {
           "word": "khyaal",
           "start": 14.48,
-          "end": 14.98
+          "end": 15.0
         },
         {
           "word": "tere,",
-          "start": 14.98,
+          "start": 15.0,
           "end": 15.4
         },
         {
           "word": "khaye",
-          "start": 15.52,
+          "start": 15.5,
           "end": 15.74
         },
         {
@@ -226,11 +226,11 @@
         {
           "word": "ke",
           "start": 22.66,
-          "end": 22.98
+          "end": 22.96
         },
         {
           "word": "lagaayi",
-          "start": 22.98,
+          "start": 22.96,
           "end": 23.56
         },
         {
@@ -248,11 +248,11 @@
         {
           "word": "Jit",
           "start": 24.22,
-          "end": 24.38
+          "end": 24.4
         },
         {
           "word": "bhi",
-          "start": 24.38,
+          "start": 24.4,
           "end": 24.68
         },
         {
@@ -263,7 +263,7 @@
         {
           "word": "re,",
           "start": 24.98,
-          "end": 25.36
+          "end": 25.38
         },
         {
           "word": "teri",
@@ -347,11 +347,11 @@
         {
           "word": "bhi",
           "start": 31.28,
-          "end": 31.48
+          "end": 31.5
         },
         {
           "word": "gaya",
-          "start": 31.48,
+          "start": 31.5,
           "end": 31.8
         },
         {
@@ -381,7 +381,7 @@
         },
         {
           "word": "manne",
-          "start": 47.1,
+          "start": 47.06,
           "end": 47.94
         }
       ]
@@ -389,16 +389,16 @@
     {
       "text": "Ho, maarya-maarya phire, dekh haal tu bichare ka",
       "start": 47.94,
-      "end": 51.17,
+      "end": 51.19,
       "words": [
         {
           "word": "Ho,",
           "start": 47.94,
-          "end": 48.14
+          "end": 48.18
         },
         {
           "word": "maarya-maarya",
-          "start": 48.16,
+          "start": 48.18,
           "end": 48.7
         },
         {
@@ -429,18 +429,18 @@
         {
           "word": "ka",
           "start": 50.92,
-          "end": 51.22
+          "end": 51.24
         }
       ]
     },
     {
       "text": "Tere bina jeena bhi ke jeena banjaarе ka?",
-      "start": 51.22,
+      "start": 51.24,
       "end": 54.76,
       "words": [
         {
           "word": "Tere",
-          "start": 51.22,
+          "start": 51.24,
           "end": 51.92
         },
         {
@@ -460,17 +460,17 @@
         },
         {
           "word": "ke",
-          "start": 52.9,
+          "start": 52.98,
           "end": 53.08
         },
         {
           "word": "jeena",
           "start": 53.08,
-          "end": 53.54
+          "end": 53.52
         },
         {
           "word": "banjaarе",
-          "start": 53.54,
+          "start": 53.52,
           "end": 54.46
         },
         {
@@ -483,16 +483,16 @@
     {
       "text": "Khoya rahun yaad teri kar ke nadaaniyaan",
       "start": 55.12,
-      "end": 58.28,
+      "end": 58.23,
       "words": [
         {
           "word": "Khoya",
           "start": 55.12,
-          "end": 55.34
+          "end": 55.32
         },
         {
           "word": "rahun",
-          "start": 55.34,
+          "start": 55.32,
           "end": 55.72
         },
         {
@@ -507,7 +507,7 @@
         },
         {
           "word": "kar",
-          "start": 56.6,
+          "start": 56.62,
           "end": 56.8
         },
         {
@@ -523,23 +523,23 @@
       ]
     },
     {
-      "text": "Batue mеin rakhun teri sambh ke nishaaniyaan",
-      "start": 58.5,
-      "end": 61.71,
+      "text": "Batue mein rakhun teri sambh ke nishaaniyaan",
+      "start": 58.28,
+      "end": 61.73,
       "words": [
         {
           "word": "Batue",
-          "start": 58.5,
+          "start": 58.28,
           "end": 58.88
         },
         {
-          "word": "mеin",
+          "word": "mein",
           "start": 58.88,
-          "end": 59.2
+          "end": 59.1
         },
         {
           "word": "rakhun",
-          "start": 59.2,
+          "start": 59.1,
           "end": 59.58
         },
         {
@@ -549,29 +549,29 @@
         },
         {
           "word": "sambh",
-          "start": 59.94,
-          "end": 60.48
+          "start": 60.4,
+          "end": 60.5
         },
         {
           "word": "ke",
-          "start": 60.48,
+          "start": 60.5,
           "end": 60.62
         },
         {
           "word": "nishaaniyaan",
           "start": 60.62,
-          "end": 61.76
+          "end": 61.78
         }
       ]
     },
     {
       "text": "Tere bina kaal horeya, theek konya haal mera",
-      "start": 61.76,
-      "end": 64.97,
+      "start": 61.78,
+      "end": 64.99,
       "words": [
         {
           "word": "Tere",
-          "start": 61.76,
+          "start": 61.78,
           "end": 62.22
         },
         {
@@ -587,12 +587,12 @@
         {
           "word": "horeya,",
           "start": 62.98,
-          "end": 63.4
+          "end": 63.42
         },
         {
           "word": "theek",
           "start": 63.6,
-          "end": 63.8
+          "end": 63.82
         },
         {
           "word": "konya",
@@ -607,18 +607,18 @@
         {
           "word": "mera",
           "start": 64.66,
-          "end": 65.02
+          "end": 65.04
         }
       ]
     },
     {
       "text": "Haath jodun Ram, dede saanson te rihaayi manne",
-      "start": 65.02,
-      "end": 68.37,
+      "start": 65.04,
+      "end": 68.33,
       "words": [
         {
           "word": "Haath",
-          "start": 65.02,
+          "start": 65.04,
           "end": 65.7
         },
         {
@@ -633,39 +633,39 @@
         },
         {
           "word": "dede",
-          "start": 66.64,
-          "end": 66.64
+          "start": 66.54,
+          "end": 66.76
         },
         {
           "word": "saanson",
-          "start": 66.64,
-          "end": 67.2
+          "start": 66.76,
+          "end": 67.18
         },
         {
           "word": "te",
-          "start": 67.2,
-          "end": 67.52
+          "start": 67.18,
+          "end": 67.46
         },
         {
           "word": "rihaayi",
-          "start": 67.52,
+          "start": 67.46,
           "end": 68.12
         },
         {
           "word": "manne",
           "start": 68.12,
-          "end": 68.42
+          "end": 68.38
         }
       ]
     },
     {
       "text": "Geetaan mein gaayi, kade chhaati ke lagaayi manne",
-      "start": 68.42,
-      "end": 71.81,
+      "start": 68.38,
+      "end": 71.83,
       "words": [
         {
           "word": "Geetaan",
-          "start": 68.42,
+          "start": 68.38,
           "end": 69.2
         },
         {
@@ -681,11 +681,11 @@
         {
           "word": "kade",
           "start": 69.92,
-          "end": 70.12
+          "end": 70.14
         },
         {
           "word": "chhaati",
-          "start": 70.12,
+          "start": 70.14,
           "end": 70.64
         },
         {
@@ -701,18 +701,18 @@
         {
           "word": "manne",
           "start": 71.58,
-          "end": 71.86
+          "end": 71.88
         }
       ]
     },
     {
       "text": "Jit bhi gaya re, teri yaad khadi paayi manne",
-      "start": 71.86,
+      "start": 71.88,
       "end": 75.19,
       "words": [
         {
           "word": "Jit",
-          "start": 71.86,
+          "start": 71.88,
           "end": 72.42
         },
         {
@@ -728,26 +728,26 @@
         {
           "word": "re,",
           "start": 72.98,
-          "end": 73.26
+          "end": 73.32
         },
         {
           "word": "teri",
-          "start": 73.38,
-          "end": 73.66
+          "start": 73.4,
+          "end": 73.68
         },
         {
           "word": "yaad",
-          "start": 73.66,
+          "start": 73.68,
           "end": 74.08
         },
         {
           "word": "khadi",
           "start": 74.08,
-          "end": 74.42
+          "end": 74.44
         },
         {
           "word": "paayi",
-          "start": 74.42,
+          "start": 74.44,
           "end": 74.96
         },
         {
@@ -765,11 +765,11 @@
         {
           "word": "Sambh-sambh",
           "start": 75.24,
-          "end": 76.36
+          "end": 76.34
         },
         {
           "word": "rakhi",
-          "start": 76.36,
+          "start": 76.34,
           "end": 76.68
         },
         {
@@ -790,11 +790,11 @@
         {
           "word": "lagaayi",
           "start": 77.8,
-          "end": 78.5
+          "end": 78.54
         },
         {
           "word": "manne",
-          "start": 78.5,
+          "start": 78.54,
           "end": 78.8
         }
       ]
@@ -802,21 +802,21 @@
     {
       "text": "Jit bhi gaya re, teri yaad khadi paayi manne",
       "start": 78.8,
-      "end": 82.56,
+      "end": 83.33,
       "words": [
         {
           "word": "Jit",
           "start": 78.8,
-          "end": 79.28
+          "end": 79.3
         },
         {
           "word": "bhi",
-          "start": 79.28,
-          "end": 79.5
+          "start": 79.3,
+          "end": 79.52
         },
         {
           "word": "gaya",
-          "start": 79.5,
+          "start": 79.52,
           "end": 79.76
         },
         {
@@ -826,7 +826,7 @@
         },
         {
           "word": "teri",
-          "start": 80.22,
+          "start": 80.24,
           "end": 80.5
         },
         {
@@ -846,51 +846,51 @@
         },
         {
           "word": "manne",
-          "start": 82.18,
-          "end": 82.56
+          "start": 82.2,
+          "end": 83.38
         }
       ]
     },
     {
       "text": "Haan-aan, aan-aan Haan-aan",
-      "start": 88.06,
-      "end": 93.59,
+      "start": 83.38,
+      "end": 90.28,
       "words": [
         {
           "word": "Haan-aan,",
-          "start": 88.06,
-          "end": 88.54
+          "start": 83.38,
+          "end": 84.73
         },
         {
           "word": "aan-aan",
-          "start": 90.6,
-          "end": 91.86
+          "start": 86.08,
+          "end": 89.08
         },
         {
           "word": "Haan-aan",
-          "start": 91.86,
-          "end": 93.64
+          "start": 89.38,
+          "end": 90.28
         }
       ]
     },
     {
       "text": "Je tu thodi ghabraajya, meri yaad tanne aa jya",
-      "start": 93.64,
+      "start": 92.51,
       "end": 98.87,
       "words": [
         {
           "word": "Je",
-          "start": 93.64,
-          "end": 94.74
+          "start": 92.51,
+          "end": 95.26
         },
         {
           "word": "tu",
           "start": 95.34,
-          "end": 95.86
+          "end": 95.84
         },
         {
           "word": "thodi",
-          "start": 95.86,
+          "start": 95.84,
           "end": 96.34
         },
         {
@@ -911,11 +911,11 @@
         {
           "word": "tanne",
           "start": 98.06,
-          "end": 98.56
+          "end": 98.58
         },
         {
           "word": "aa",
-          "start": 98.56,
+          "start": 98.58,
           "end": 98.76
         },
         {
@@ -928,16 +928,16 @@
     {
       "text": "Tu de diye awaaz re, main aa jaaunga",
       "start": 98.92,
-      "end": 102.21,
+      "end": 102.19,
       "words": [
         {
           "word": "Tu",
           "start": 98.92,
-          "end": 99.36
+          "end": 99.34
         },
         {
           "word": "de",
-          "start": 99.36,
+          "start": 99.34,
           "end": 99.64
         },
         {
@@ -953,33 +953,33 @@
         {
           "word": "re,",
           "start": 100.66,
-          "end": 100.94
+          "end": 100.96
         },
         {
           "word": "main",
-          "start": 101.0,
-          "end": 101.12
+          "start": 101.16,
+          "end": 101.16
         },
         {
           "word": "aa",
-          "start": 101.12,
+          "start": 101.16,
           "end": 101.6
         },
         {
           "word": "jaaunga",
           "start": 101.6,
-          "end": 102.26
+          "end": 102.24
         }
       ]
     },
     {
       "text": "Todun duniya ki reet re, ke haar re, ke jeet?",
-      "start": 102.26,
+      "start": 102.24,
       "end": 105.87,
       "words": [
         {
           "word": "Todun",
-          "start": 102.26,
+          "start": 102.24,
           "end": 102.82
         },
         {
@@ -990,21 +990,21 @@
         {
           "word": "ki",
           "start": 103.42,
-          "end": 103.68
+          "end": 103.66
         },
         {
           "word": "reet",
-          "start": 103.68,
+          "start": 103.66,
           "end": 104.08
         },
         {
           "word": "re,",
           "start": 104.08,
-          "end": 104.36
+          "end": 104.34
         },
         {
           "word": "ke",
-          "start": 104.46,
+          "start": 104.48,
           "end": 104.54
         },
         {
@@ -1015,16 +1015,16 @@
         {
           "word": "re,",
           "start": 104.94,
-          "end": 105.28
+          "end": 105.22
         },
         {
           "word": "ke",
           "start": 105.3,
-          "end": 105.42
+          "end": 105.4
         },
         {
           "word": "jeet?",
-          "start": 105.42,
+          "start": 105.4,
           "end": 105.9
         }
       ]
@@ -1032,16 +1032,16 @@
     {
       "text": "Manne chahiye teri preet, main nibha jaaunga",
       "start": 105.92,
-      "end": 109.13,
+      "end": 109.11,
       "words": [
         {
           "word": "Manne",
           "start": 105.92,
-          "end": 106.22
+          "end": 106.26
         },
         {
           "word": "chahiye",
-          "start": 106.22,
+          "start": 106.54,
           "end": 106.82
         },
         {
@@ -1052,7 +1052,7 @@
         {
           "word": "preet,",
           "start": 107.14,
-          "end": 107.62
+          "end": 107.6
         },
         {
           "word": "main",
@@ -1062,23 +1062,23 @@
         {
           "word": "nibha",
           "start": 107.72,
-          "end": 108.28
+          "end": 108.3
         },
         {
           "word": "jaaunga",
-          "start": 108.28,
-          "end": 109.18
+          "start": 108.3,
+          "end": 109.16
         }
       ]
     },
     {
       "text": "Dekh, bawla banaagi, manne likhna sikhaagi",
-      "start": 109.18,
-      "end": 112.61,
+      "start": 109.16,
+      "end": 112.63,
       "words": [
         {
           "word": "Dekh,",
-          "start": 109.18,
+          "start": 109.16,
           "end": 109.78
         },
         {
@@ -1089,34 +1089,34 @@
         {
           "word": "banaagi,",
           "start": 110.4,
-          "end": 111.08
+          "end": 111.06
         },
         {
           "word": "manne",
-          "start": 111.08,
+          "start": 111.14,
           "end": 111.26
         },
         {
           "word": "likhna",
           "start": 111.26,
-          "end": 111.94
+          "end": 111.96
         },
         {
           "word": "sikhaagi",
-          "start": 111.94,
-          "end": 112.66
+          "start": 111.96,
+          "end": 112.68
         }
       ]
     },
     {
       "text": "Haaye, noch-noch khaagi teri bairan judaai manne",
-      "start": 112.66,
-      "end": 116.33,
+      "start": 112.68,
+      "end": 116.35,
       "words": [
         {
           "word": "Haaye,",
-          "start": 112.66,
-          "end": 113.1
+          "start": 112.68,
+          "end": 113.08
         },
         {
           "word": "noch-noch",
@@ -1146,33 +1146,33 @@
         {
           "word": "manne",
           "start": 116.04,
-          "end": 116.38
+          "end": 116.4
         }
       ]
     },
     {
       "text": "Geetaan mein gaayi, kade chhaati ke lagaayi manne",
-      "start": 116.38,
+      "start": 116.4,
       "end": 119.81,
       "words": [
         {
           "word": "Geetaan",
-          "start": 116.38,
-          "end": 117.2
+          "start": 116.4,
+          "end": 117.18
         },
         {
           "word": "mein",
-          "start": 117.2,
-          "end": 117.46
+          "start": 117.18,
+          "end": 117.44
         },
         {
           "word": "gaayi,",
-          "start": 117.46,
-          "end": 117.9
+          "start": 117.44,
+          "end": 117.82
         },
         {
           "word": "kade",
-          "start": 117.96,
+          "start": 117.98,
           "end": 118.1
         },
         {
@@ -1200,7 +1200,7 @@
     {
       "text": "Jit bhi gaya re, teri yaad khadi paayi manne",
       "start": 119.86,
-      "end": 123.21,
+      "end": 123.19,
       "words": [
         {
           "word": "Jit",
@@ -1220,16 +1220,16 @@
         {
           "word": "re,",
           "start": 120.98,
-          "end": 121.34
+          "end": 121.3
         },
         {
           "word": "teri",
           "start": 121.38,
-          "end": 121.66
+          "end": 121.68
         },
         {
           "word": "yaad",
-          "start": 121.66,
+          "start": 121.68,
           "end": 122.08
         },
         {
@@ -1240,43 +1240,43 @@
         {
           "word": "paayi",
           "start": 122.42,
-          "end": 122.96
+          "end": 122.98
         },
         {
           "word": "manne",
-          "start": 122.96,
-          "end": 123.26
+          "start": 122.98,
+          "end": 123.24
         }
       ]
     },
     {
       "text": "Aaj tai nibhaun jo si kasam thi khaayi manne",
-      "start": 123.26,
-      "end": 126.71,
+      "start": 123.24,
+      "end": 126.73,
       "words": [
         {
           "word": "Aaj",
-          "start": 123.26,
+          "start": 123.24,
           "end": 123.96
         },
         {
           "word": "tai",
           "start": 123.96,
-          "end": 124.14
+          "end": 124.12
         },
         {
           "word": "nibhaun",
-          "start": 124.14,
+          "start": 124.12,
           "end": 124.68
         },
         {
           "word": "jo",
           "start": 124.68,
-          "end": 124.84
+          "end": 124.86
         },
         {
           "word": "si",
-          "start": 124.84,
+          "start": 124.86,
           "end": 125.08
         },
         {
@@ -1292,23 +1292,23 @@
         {
           "word": "khaayi",
           "start": 125.92,
-          "end": 126.46
+          "end": 126.44
         },
         {
           "word": "manne",
-          "start": 126.46,
-          "end": 126.76
+          "start": 126.44,
+          "end": 126.78
         }
       ]
     },
     {
       "text": "Zindagi saari ya meri tere lekhe laayi manne",
-      "start": 126.76,
+      "start": 126.78,
       "end": 130.1,
       "words": [
         {
           "word": "Zindagi",
-          "start": 126.76,
+          "start": 126.78,
           "end": 127.46
         },
         {
@@ -1319,26 +1319,26 @@
         {
           "word": "ya",
           "start": 127.9,
-          "end": 128.1
+          "end": 128.08
         },
         {
           "word": "meri",
-          "start": 128.1,
+          "start": 128.08,
           "end": 128.52
         },
         {
           "word": "tere",
-          "start": 128.58,
+          "start": 128.52,
           "end": 128.86
         },
         {
           "word": "lekhe",
           "start": 128.86,
-          "end": 129.4
+          "end": 129.38
         },
         {
           "word": "laayi",
-          "start": 129.4,
+          "start": 129.38,
           "end": 129.84
         },
         {
