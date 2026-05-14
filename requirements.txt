@@ -1,0 +1,25 @@
+Core & Configuration
+
+python-dotenv>=1.0.0
+
+Telegram Interface
+
+python-telegram-bot>=20.0
+
+Data Discovery & Downloading
+
+ytmusicapi>=0.33.0
+yt-dlp>=2023.10.13
+syncedlyrics>=0.9.0
+
+AI Sync & Audio Processing
+
+Note: Whisper requires ffmpeg to be installed on your system's PATH
+
+whisper-timestamped>=1.14.2
+
+YouTube API Uploads
+
+google-api-python-client>=2.100.0
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.1.0

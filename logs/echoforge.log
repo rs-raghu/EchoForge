@@ -1,0 +1,4 @@
+2026-05-14 08:51:05 | ERROR    | [__main__] ❌ Missing D:\Hello World\Automations\EchoForge V3\client_secrets.json. Please download it from Google Cloud Console.
+2026-05-14 09:06:16 | WARNING  | [__main__] ⚠️ No valid OAuth token found!
+2026-05-14 09:06:16 | WARNING  | [__main__] 👉 You MUST run this script manually in your terminal once to log in and generate the token.json file.
+2026-05-14 09:07:00 | INFO     | [__main__] ✅ Google API Token saved to D:\Hello World\Automations\EchoForge V3\database\token.json

@@ -1,0 +1,19 @@
+{
+  "name": "echoforge-remotion",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "remotion studio src/index.ts",
+    "build": "remotion render src/index.ts LyricVideo out/video.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.460",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.0.0"
+  }
+}
