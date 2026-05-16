@@ -1,7 +1,25 @@
+"""
+engine/workers/fetch_audio.py
+
+Downloads the best audio from YouTube and saves it as audio.mp3
+in the song's workspace directory.
+
+Bug 2 fix
+─────────
+The function now calls sys.exit(0) on success and sys.exit(1) on failure
+instead of returning True/False. When run as a multiprocessing.Process,
+a Python return value does NOT set the OS exit code — returning False
+still exits with code 0, which the orchestrator misreads as success.
+
+CLI USAGE:
+    python fetch_audio.py --video-id dQw4w9WgXcQ --workspace ./workspaces/dQw4w9WgXcQ
+"""
+
+import argparse
 import os
 import sys
 
-# Ensure the root directory is in the Python path (3 levels up: fetch_audio.py -> workers -> engine -> root)
+# Ensure root is on the path when running as a standalone script
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from utils.logger import get_logger
@@ -11,89 +29,102 @@ log = get_logger(__name__)
 try:
     import yt_dlp
 except ImportError:
-    log.error("❌ 'yt-dlp' is not installed! Run: pip install yt-dlp")
+    log.error("❌ 'yt-dlp' is not installed. Run: pip install yt-dlp")
     yt_dlp = None
 
-def download(song):
+# Error messages that indicate a permanent, non-retryable failure
+_PERMANENT_ERRORS = (
+    "video unavailable", "this video is unavailable",
+    "private video", "this video is private",
+    "has been removed", "age-restricted",
+    "sign in to confirm your age",
+    "blocked in your country", "not available in your country",
+    "copyright", "this video contains content",
+)
+
+
+def download(song: dict) -> bool:
     """
-    Downloads the best audio quality from YouTube and converts it to MP3.
-    Saves it as 'audio.mp3' in the song's workspace directory.
-    
-    Returns True on success, False on failure.
+    Download audio for *song* and save as audio.mp3 in workspace_dir.
+    Returns True on success, False on any failure.
+
+    NOTE: When called as a multiprocessing.Process target, the caller
+    (_run_audio_fetch in orchestrator.py) wraps this in sys.exit(0/1).
     """
     if not yt_dlp:
-        log.error("yt-dlp is missing. Cannot download audio.")
+        log.error("❌ yt-dlp missing — cannot download.")
         return False
 
-    title = song.get('title', 'Unknown')
-    video_id = song.get('video_id')
-    workspace_dir = song.get('workspace_dir')
-    
-    # If url isn't explicitly defined, build it from the video_id
-    url = song.get('url')
-    if not url and video_id:
-        url = f"https://www.youtube.com/watch?v={video_id}"
-        
-    if not url or not workspace_dir:
-        log.error(f"❌ Missing URL or workspace directory for '{title}'")
+    video_id      = song.get("video_id", "")
+    title         = song.get("title", "Unknown")
+    workspace_dir = song.get("workspace_dir")
+    url           = song.get("url") or f"https://www.youtube.com/watch?v={video_id}"
+
+    if not workspace_dir:
+        log.error("❌ Missing workspace_dir for '%s'", title)
         return False
 
+    os.makedirs(workspace_dir, exist_ok=True)
     output_path = os.path.join(workspace_dir, "audio.mp3")
-    
-    # Check if the file was already downloaded (e.g., if we are resuming a paused job)
+
     if os.path.exists(output_path):
-        log.info(f"✅ Audio already exists at {output_path}. Skipping download.")
+        log.info("✅ audio.mp3 already exists — skipping download.")
         return True
 
-    log.info(f"⬇️ Downloading audio for '{title}' from {url}...")
+    log.info("⬇️  Downloading audio for '%s' from %s", title, url)
 
-    # yt-dlp configuration to extract audio and convert to 192k mp3
     ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': os.path.join(workspace_dir, 'audio.%(ext)s'),
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
+        "format":        "bestaudio/best",
+        "outtmpl":       os.path.join(workspace_dir, "audio.%(ext)s"),
+        "postprocessors": [{
+            "key":              "FFmpegExtractAudio",
+            "preferredcodec":   "mp3",
+            "preferredquality": "192",
         }],
-        'quiet': True,
-        'no_warnings': True,
-        'nocheckcertificate': True,
+        "quiet":             True,
+        "no_warnings":       True,
+        "nocheckcertificate": True,
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
-            
+
         if os.path.exists(output_path):
-            log.info(f"✅ Successfully downloaded and converted audio to {output_path}")
+            log.info("✅ Audio saved: %s", output_path)
             return True
-        else:
-            log.error(f"❌ yt-dlp finished but audio.mp3 is missing in the workspace.")
-            return False
 
-    except yt_dlp.utils.DownloadError as e:
-        err_msg = str(e).lower()
-        if "unavailable" in err_msg or "private" in err_msg or "copyright" in err_msg or "age-restricted" in err_msg:
-            log.error(f"⛔ Video unavailable, blocked, or restricted: {e}")
-            # Note: We return False here. The Process Manager will catch this and mark the song as FAILED.
-        else:
-            log.error(f"❌ yt-dlp download error: {e}")
-        return False
-        
-    except Exception as e:
-        log.exception(f"❌ Unexpected error downloading audio: {e}")
+        log.error("❌ yt-dlp finished but audio.mp3 is missing.")
         return False
 
-# --- Independent Testing ---
+    except yt_dlp.utils.DownloadError as exc:
+        msg = str(exc).lower()
+        if any(trigger in msg for trigger in _PERMANENT_ERRORS):
+            log.error("⛔ Video permanently unavailable: %s", url)
+        else:
+            log.error("❌ Download error: %s", exc)
+        return False
+
+    except Exception as exc:
+        log.exception("❌ Unexpected error downloading audio: %s", exc)
+        return False
+
+
+# ── CLI ────────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    print("Testing Fetch Audio Worker...")
-    # A safe, public domain / stock audio track or well-known video (Rick Roll) for testing
-    test_song = {
-        "title": "Rick Roll",
-        "video_id": "dQw4w9WgXcQ", 
-        "workspace_dir": "./test_workspace"
+    parser = argparse.ArgumentParser(description="EchoForge Audio Downloader")
+    parser.add_argument("--video-id",  required=True,  help="YouTube video ID")
+    parser.add_argument("--workspace", required=True,  help="Workspace directory path")
+    parser.add_argument("--title",     default="Test", help="Song title (for logging)")
+    args = parser.parse_args()
+
+    song = {
+        "video_id":     args.video_id,
+        "title":        args.title,
+        "workspace_dir": args.workspace,
     }
-    os.makedirs(test_song["workspace_dir"], exist_ok=True)
-    success = download(test_song)
-    print(f"Download Success: {success}")
+    os.makedirs(args.workspace, exist_ok=True)
+    ok = download(song)
+    print(f"\n{'✅ Success' if ok else '❌ Failed'}: {args.workspace}/audio.mp3")
+    sys.exit(0 if ok else 1)

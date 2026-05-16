@@ -1,9 +1,23 @@
+"""
+engine/workers/youtube_upload.py
+
+Uploads final_video.mp4 to YouTube using the Data API v3.
+
+Bug 2 fix — sys.exit(0/1) instead of return True/False.
+
+FIRST-RUN AUTH:
+    Run this script directly once to generate token.json:
+        python youtube_upload.py --auth-only
+
+CLI USAGE:
+    python youtube_upload.py --workspace ./workspaces/abc123 \\
+                             --title "Song" --artist "Artist"
+"""
+
+import argparse
 import os
 import sys
-import json
-from pathlib import Path
 
-# Ensure the root directory is in the Python path
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(ROOT_DIR)
 
@@ -13,168 +27,179 @@ log = get_logger(__name__)
 
 try:
     from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
+    from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
-    from google.auth.transport.requests import Request
-    from googleapiclient.errors import HttpError
 except ImportError:
-    log.error("❌ Google API client libraries are missing! Run: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib")
+    log.error("❌ Google API libraries missing. Run: pip install google-api-python-client google-auth-oauthlib google-auth-httplib2")
     build = None
 
-# We store the secrets in the root, and the token in the database folder
-CLIENT_SECRETS_FILE = os.path.join(ROOT_DIR, "client_secrets.json")
-TOKEN_FILE = os.path.join(ROOT_DIR, "database", "token.json")
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+CLIENT_SECRETS = os.path.join(ROOT_DIR, "client_secrets.json")
+TOKEN_FILE     = os.path.join(ROOT_DIR, "database", "token.json")
+SCOPES         = ["https://www.googleapis.com/auth/youtube.upload"]
+
+
+# ─── Auth ─────────────────────────────────────────────────────────────────────
 
 def get_authenticated_service():
-    """
-    Handles Google OAuth2 authentication. 
-    Loads an existing token or prompts the user if run interactively.
-    """
+    """Load or refresh OAuth2 credentials and return the YouTube service."""
     creds = None
-    
-    # The file token.json stores the user's access and refresh tokens.
+
     if os.path.exists(TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-        
-    # If there are no (valid) credentials available, let the user log in.
+
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            log.info("🔄 Refreshing expired Google API token...")
+            log.info("🔄 Refreshing YouTube token...")
             try:
                 creds.refresh(Request())
-            except Exception as e:
-                log.error(f"❌ Failed to refresh token. It may have been revoked: {e}")
+            except Exception as exc:
+                log.error("❌ Token refresh failed: %s", exc)
                 creds = None
 
         if not creds:
-            if not os.path.exists(CLIENT_SECRETS_FILE):
-                log.error(f"❌ Missing {CLIENT_SECRETS_FILE}. Please download it from Google Cloud Console.")
-                return None
-                
-            log.warning("⚠️ No valid OAuth token found!")
-            log.warning("👉 You MUST run this script manually in your terminal once to log in and generate the token.json file.")
-            
-            # Only attempt to open the browser if we are running the script directly (interactive mode)
-            if __name__ == "__main__":
-                flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
-                creds = flow.run_local_server(port=0)
-            else:
-                log.error("❌ Cannot perform OAuth login in the background process. Aborting upload.")
+            if not os.path.exists(CLIENT_SECRETS):
+                log.error("❌ client_secrets.json not found at %s", CLIENT_SECRETS)
                 return None
 
-        # Save the credentials for the next run
+            if sys.stdin.isatty():
+                # Interactive — open browser
+                flow  = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS, SCOPES)
+                creds = flow.run_local_server(port=0)
+            else:
+                log.error(
+                    "❌ Cannot perform OAuth login in a non-interactive process.\n"
+                    "   Run:  python engine/workers/youtube_upload.py --auth-only"
+                )
+                return None
+
         os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
-        with open(TOKEN_FILE, "w") as token:
-            token.write(creds.to_json())
-            log.info(f"✅ Google API Token saved to {TOKEN_FILE}")
+        with open(TOKEN_FILE, "w") as fh:
+            fh.write(creds.to_json())
+        log.info("✅ Token saved: %s", TOKEN_FILE)
 
     return build("youtube", "v3", credentials=creds, cache_discovery=False)
 
-def upload(song):
+
+# ─── Upload ───────────────────────────────────────────────────────────────────
+
+def upload(song: dict) -> bool:
     """
-    Uploads the final_video.mp4 to YouTube using the authenticated API.
-    Returns True on success, False on failure.
+    Upload final_video.mp4 to YouTube.
+    Returns True on success, False on any failure.
     """
     if not build:
         return False
 
-    workspace_dir = song.get('workspace_dir')
-    title = song.get('title', 'Unknown Title')
-    artist = song.get('artist', 'Unknown Artist')
-    
+    workspace_dir = song.get("workspace_dir")
+    title         = song.get("title", "Unknown")
+    artist        = song.get("artist", "Unknown")
+
     if not workspace_dir:
-        log.error("❌ Missing workspace directory.")
+        log.error("❌ Missing workspace_dir.")
         return False
 
     video_path = os.path.join(workspace_dir, "final_video.mp4")
-    
     if not os.path.exists(video_path):
-        log.error(f"❌ Cannot upload! Video file not found at {video_path}")
+        log.error("❌ final_video.mp4 not found at %s", video_path)
         return False
-
-    log.info(f"🚀 Preparing YouTube upload for '{title} by {artist}'...")
 
     youtube = get_authenticated_service()
     if not youtube:
-        log.error("❌ Failed to authenticate with YouTube API.")
         return False
 
-    # --- Video Metadata ---
-    # You can customize this or pull a description from Claude/OpenAI if you saved it in the DB!
-    upload_title = f"{title} - {artist} (Lyric Video)"
-    
-    # Truncate title if it exceeds YouTube's 100 character limit
-    if len(upload_title) > 100:
-        upload_title = upload_title[:97] + "..."
+    # Build metadata
+    yt_title = f"{title} - {artist} (Lyric Video)"
+    if len(yt_title) > 100:
+        yt_title = yt_title[:97] + "..."
 
-    description = (
-        f"🎵 Lyric video for {title} by {artist}.\n\n"
-        f"Generated automatically by EchoForge.\n"
-        f"#lyrics #lyricvideo #{artist.replace(' ', '')} #{title.replace(' ', '')}"
-    )
-
-    tags = ["lyrics", "lyric video", artist, title, "music", "pop", "trending"]
+    # Use AI-generated description if saved in workspace
+    desc_path = os.path.join(workspace_dir, "description.txt")
+    if os.path.exists(desc_path):
+        with open(desc_path, "r", encoding="utf-8") as fh:
+            description = fh.read().strip()
+        log.info("📝 Using saved description from description.txt")
+    else:
+        description = (
+            f"🎵 Lyric video for {title} by {artist}.\n\n"
+            f"Generated automatically by EchoForge.\n"
+            f"#{artist.replace(' ', '')} #{title.replace(' ', '')} #lyrics #lyricvideo"
+        )
 
     body = {
         "snippet": {
-            "title": upload_title,
+            "title":       yt_title,
             "description": description,
-            "tags": tags,
-            "categoryId": "10" # 10 = Music
+            "tags":        ["lyrics", "lyric video", artist, title, "music"],
+            "categoryId":  "10",
         },
         "status": {
-            "privacyStatus": "public", # Use "private" or "unlisted" for testing!
-            "selfDeclaredMadeForKids": False
-        }
+            "privacyStatus":           "private",   # safe default — change to public when ready
+            "selfDeclaredMadeForKids": False,
+        },
     }
 
-    log.info("📡 Connecting to YouTube and uploading video chunks...")
+    log.info("📡 Uploading '%s' to YouTube [%s]...", yt_title, body["status"]["privacyStatus"])
 
     try:
-        # Create the media file upload object
-        media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
-
-        # Execute the API request
+        media   = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
         request = youtube.videos().insert(
-            part=",".join(body.keys()),
-            body=body,
-            media_body=media
+            part=",".join(body.keys()), body=body, media_body=media
         )
 
-        response = request.execute()
-        
-        youtube_url = f"https://www.youtube.com/watch?v={response.get('id')}"
-        log.info(f"🎉 SUCCESS! Video uploaded to YouTube: {youtube_url}")
-        
-        # Save the published URL back to the workspace for your records
-        with open(os.path.join(workspace_dir, "published_url.txt"), "w") as f:
-            f.write(youtube_url)
-            
+        response = None
+        while response is None:
+            status, response = request.next_chunk()
+            if status:
+                log.info("⏳ Upload progress: %d%%", int(status.progress() * 100))
+
+        yt_id  = response.get("id")
+        yt_url = f"https://www.youtube.com/watch?v={yt_id}"
+        log.info("🎉 Upload complete: %s", yt_url)
+
+        # Save the URL for reference
+        with open(os.path.join(workspace_dir, "published_url.txt"), "w") as fh:
+            fh.write(yt_url)
+
         return True
 
-    except HttpError as e:
-        log.error(f"❌ YouTube API HTTP Error: {e.status_code} - {e.reason}")
-        if "quotaExceeded" in str(e):
-             log.error("⚠️ You have exceeded your YouTube Data API daily quota limit!")
-        return False
-    except Exception as e:
-        log.exception(f"❌ Unexpected error during upload: {e}")
+    except HttpError as exc:
+        log.error("❌ YouTube API error %s: %s", exc.status_code, exc.reason)
+        if "quotaExceeded" in str(exc):
+            log.error("⚠️  Daily API quota exceeded — try again tomorrow.")
         return False
 
-# --- Independent Testing / Token Generation ---
+    except Exception as exc:
+        log.exception("❌ Unexpected upload error: %s", exc)
+        return False
+
+
+# ── CLI ────────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    print("Testing YouTube Upload Worker / Initializing Token...")
-    # Running this directly allows the OAuth browser window to open if the token is missing.
-    youtube_service = get_authenticated_service()
-    if youtube_service:
-        print("✅ Authentication successful. Ready to upload in the background.")
-        
-        # Uncomment below to test an actual upload
-        # test_song = {
-        #     "title": "Test Upload",
-        #     "artist": "EchoForge",
-        #     "workspace_dir": "./test_workspace"
-        # }
-        # upload(test_song) 
+    parser = argparse.ArgumentParser(description="EchoForge YouTube Uploader")
+    parser.add_argument("--workspace", default=None,  help="Workspace directory")
+    parser.add_argument("--title",     default="Test", help="Song title")
+    parser.add_argument("--artist",    default="Test Artist")
+    parser.add_argument("--auth-only", action="store_true",
+                        help="Only generate/refresh token.json, do not upload.")
+    args = parser.parse_args()
+
+    if args.auth_only:
+        svc = get_authenticated_service()
+        print("✅ Auth OK" if svc else "❌ Auth failed")
+        sys.exit(0 if svc else 1)
+
+    if not args.workspace:
+        parser.error("--workspace is required unless --auth-only is set.")
+
+    song = {
+        "title":         args.title,
+        "artist":        args.artist,
+        "workspace_dir": args.workspace,
+    }
+    ok = upload(song)
+    print(f"\n{'✅ Success' if ok else '❌ Failed'}")
+    sys.exit(0 if ok else 1)

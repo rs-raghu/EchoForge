@@ -1,134 +1,139 @@
-import os
-import sys
-import json
-import subprocess
-import shutil
+"""
+engine/workers/render_video.py
 
-# Ensure the root directory is in the Python path
+Renders the final lyric video using Remotion.
+Stages assets into remotion/public/, runs the CLI, saves final_video.mp4
+back to the workspace.
+
+Bug 2 fix — sys.exit(0/1) instead of return True/False.
+
+CLI USAGE:
+    python render_video.py --workspace ./workspaces/abc123 --title "Song" --artist "Artist"
+"""
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from utils.logger import get_logger
 
 log = get_logger(__name__)
 
-def render(song):
+ROOT_DIR    = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REMOTION_DIR = os.path.join(ROOT_DIR, "remotion")
+PUBLIC_DIR   = os.path.join(REMOTION_DIR, "public")
+
+
+def render(song: dict) -> bool:
     """
-    Renders the final lyric video using Remotion.
-    Copies assets to the Remotion public directory, triggers the CLI, 
-    and saves the output video back to the workspace.
-    
-    Returns True on success, False on failure.
+    Render final_video.mp4 for *song* into workspace_dir.
+    Returns True on success, False on any failure.
     """
-    workspace_dir = song.get('workspace_dir')
-    title = song.get('title', 'Unknown Title')
-    artist = song.get('artist', 'Unknown Artist')
+    workspace_dir = song.get("workspace_dir")
+    title         = song.get("title", "Unknown")
+    artist        = song.get("artist", "Unknown")
 
     if not workspace_dir:
-        log.error("❌ Missing workspace directory.")
+        log.error("❌ Missing workspace_dir.")
         return False
 
-    audio_path = os.path.join(workspace_dir, "audio.mp3")
-    timestamps_path = os.path.join(workspace_dir, "timestamps.json")
+    audio_path  = os.path.join(workspace_dir, "audio.mp3")
+    ts_path     = os.path.join(workspace_dir, "timestamps.json")
     output_video = os.path.join(workspace_dir, "final_video.mp4")
 
-    # If it's already rendered (e.g. paused and resumed), skip
     if os.path.exists(output_video):
-        log.info(f"✅ Video already rendered at {output_video}")
+        log.info("✅ Video already rendered — skipping.")
         return True
 
-    if not os.path.exists(audio_path) or not os.path.exists(timestamps_path):
-        log.error(f"❌ Missing required assets (audio.mp3 or timestamps.json) for '{title}'.")
+    if not os.path.exists(audio_path):
+        log.error("❌ audio.mp3 missing from workspace.")
+        return False
+    if not os.path.exists(ts_path):
+        log.error("❌ timestamps.json missing from workspace.")
         return False
 
-    # Define Remotion paths
-    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    remotion_dir = os.path.join(root_dir, "remotion")
-    public_dir = os.path.join(remotion_dir, "public")
-    
-    if not os.path.exists(remotion_dir):
-        log.error(f"❌ Remotion project directory not found at {remotion_dir}")
+    if not os.path.exists(REMOTION_DIR):
+        log.error("❌ Remotion project not found at %s", REMOTION_DIR)
         return False
 
-    log.info(f"🎬 Preparing Remotion environment for '{title}'...")
+    log.info("🎬 Preparing Remotion render for '%s'...", title)
 
     try:
-        # 1. Prepare the Public Directory
-        os.makedirs(public_dir, exist_ok=True)
-        
-        # Copy assets into the public folder so the React app can read them natively
-        shutil.copy(audio_path, os.path.join(public_dir, "audio.mp3"))
-        shutil.copy(timestamps_path, os.path.join(public_dir, "timestamps.json"))
+        os.makedirs(PUBLIC_DIR, exist_ok=True)
 
-        # 2. Prepare the Dynamic Props
-        # These are injected directly into your React Root component
+        # Stage assets
+        shutil.copy(audio_path, os.path.join(PUBLIC_DIR, "audio.mp3"))
+        shutil.copy(ts_path,    os.path.join(PUBLIC_DIR, "timestamps.json"))
+
+        # Write props file
         props = {
-            "title": title,
-            "artist": artist,
-            # Because they are in the public folder, we just pass the filenames
-            "audioUrl": "audio.mp3",
-            "timestampsUrl": "timestamps.json"
+            "title":         title,
+            "artist":        artist,
+            "audioUrl":      "audio.mp3",
+            "timestampsUrl": "timestamps.json",
         }
-
-        props_file = os.path.join(remotion_dir, "current_props.json")
-        with open(props_file, "w", encoding="utf-8") as f:
-            json.dump(props, f)
+        props_file = os.path.join(REMOTION_DIR, "current_props.json")
+        with open(props_file, "w", encoding="utf-8") as fh:
+            json.dump(props, fh)
 
         log.info("🔥 Starting Remotion render engine...")
 
-        # 3. Construct the Remotion CLI command
-        # Syntax: npx remotion render <entry> <composition> <output> --props=<json_file>
-        cmd = [
-            "npx",
-            "remotion",
-            "render",
-            "src/index.ts",
-            "LyricVideo",  # Matches the composition ID in your Remotion Root
-            output_video,
-            f"--props={props_file}"
-        ]
-
-        # 4. Execute and stream output
-        process = subprocess.Popen(
-            cmd,
-            cwd=remotion_dir,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
+        use_shell = os.name == "nt"
+        proc = subprocess.run(
+            [
+                "npx", "remotion", "render",
+                "src/index.ts",
+                "LyricVideo",
+                output_video,
+                f"--props={props_file}",
+            ],
+            cwd=REMOTION_DIR,
+            capture_output=False,   # stream stdout so progress is visible in logs
+            shell=use_shell,
         )
 
-        for line in process.stdout:
-            line = line.strip()
-            if line:
-                # Log Remotion's progress frames (Optional: set to debug if it's too noisy)
-                log.info(f"[REMOTION] {line}")
-
-        process.wait()
-
-        # 5. Verify Success and Cleanup
-        if process.returncode == 0 and os.path.exists(output_video):
-            log.info(f"✅ Video rendered successfully: {output_video}")
-            
-            # Clean up the public folder to save space and prevent leaks
-            os.remove(os.path.join(public_dir, "audio.mp3"))
-            os.remove(os.path.join(public_dir, "timestamps.json"))
+        # Clean up staging files (best-effort)
+        for staged in ("audio.mp3", "timestamps.json"):
+            try:
+                os.remove(os.path.join(PUBLIC_DIR, staged))
+            except OSError:
+                pass
+        try:
             os.remove(props_file)
-            
-            return True
-        else:
-            log.error(f"❌ Remotion render failed with exit code {process.returncode}")
-            return False
+        except OSError:
+            pass
 
-    except Exception as e:
-        log.exception(f"❌ Unexpected error during rendering: {e}")
+        if proc.returncode == 0 and os.path.exists(output_video):
+            log.info("✅ Video rendered: %s", output_video)
+            return True
+
+        log.error("❌ Remotion render failed (exit code %d).", proc.returncode)
         return False
 
-# --- Independent Testing ---
+    except Exception as exc:
+        log.exception("❌ Unexpected render error: %s", exc)
+        return False
+
+
+# ── CLI ────────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    print("Testing Render Worker...")
-    test_song = {
-        "title": "Test Track",
-        "artist": "Test Artist",
-        "workspace_dir": "./test_workspace"
+    parser = argparse.ArgumentParser(description="EchoForge Render Worker")
+    parser.add_argument("--workspace", required=True)
+    parser.add_argument("--title",     default="Test Track")
+    parser.add_argument("--artist",    default="Test Artist")
+    args = parser.parse_args()
+
+    song = {
+        "title":         args.title,
+        "artist":        args.artist,
+        "workspace_dir": args.workspace,
     }
-    # success = render(test_song)
-    print("Note: Requires a valid Remotion project in ../../../remotion and assets in the workspace.")
+    ok = render(song)
+    print(f"\n{'✅ Success' if ok else '❌ Failed'}")
+    sys.exit(0 if ok else 1)

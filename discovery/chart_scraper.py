@@ -1,7 +1,26 @@
+"""
+discovery/chart_scraper.py
+
+Scrapes the YouTube Music global charts using ytmusicapi (no Selenium/headless
+browser required).
+
+Changes from original
+─────────────────────
+• Each song dict now includes a `url` field so fetch_audio.py never has to
+  reconstruct it from video_id alone.
+• scrape_top_charts() is a plain synchronous function — asyncio.to_thread()
+  in the bot wraps it so the event loop stays unblocked.
+• The bot calls db_manager.mark_chart_scraped() after a successful run so
+  subsequent calls within CHART_CACHE_HOURS are blocked at the UI level.
+
+CLI USAGE:
+    python chart_scraper.py --limit 10
+"""
+
+import argparse
 import sys
 import os
 
-# Ensure the root directory is in the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.logger import get_logger
@@ -11,65 +30,93 @@ log = get_logger(__name__)
 try:
     from ytmusicapi import YTMusic
 except ImportError:
-    log.error("❌ 'ytmusicapi' is not installed! Run: pip install ytmusicapi")
+    log.error("❌ 'ytmusicapi' not installed. Run: pip install ytmusicapi")
     YTMusic = None
 
-def scrape_top_charts(limit=20):
+
+def scrape_top_charts(limit: int = 20, country: str = "US") -> list[dict]:
     """
-    Fetches the top trending songs from YouTube Music Global Charts.
-    Returns a list of dictionaries containing video_id, title, and artist.
+    Fetch the top *limit* trending songs from YouTube Music charts.
+
+    Returns a list of dicts:
+        {
+            "video_id": str,
+            "title":    str,
+            "artist":   str,
+            "url":      str,   ← full YouTube watch URL
+        }
+
+    Returns an empty list on any failure (caller handles gracefully).
     """
     if not YTMusic:
-        raise ImportError("ytmusicapi is missing. Please install it.")
+        raise ImportError("ytmusicapi is not installed.")
 
-    log.info(f"🔍 Initializing YTMusic API to fetch top {limit} trending songs...")
+    log.info("🔍 Fetching YouTube Music charts (country=%s, limit=%d)...", country, limit)
     yt = YTMusic()
-    
-    songs_data = []
-    
+
     try:
-        # Fetch global charts ('ZZ' is often used for Global in YT Music, or 'US' for United States)
-        # We'll fetch the 'trending' or 'videos' chart.
-        charts = yt.get_charts(country='US') 
-        
-        # 'videos' or 'tracks' usually contains the top charts
-        # Fallback to 'trending' if 'videos' isn't available
-        top_items = charts.get('videos', {}).get('items', [])
-        if not top_items:
-            top_items = charts.get('tracks', {}).get('items', [])
+        charts    = yt.get_charts(country=country)
 
-        for item in top_items:
-            if len(songs_data) >= limit:
+        # ytmusicapi can return results under 'videos' or 'tracks' depending
+        # on the region — try both keys.
+        items = (
+            charts.get("videos",  {}).get("items", []) or
+            charts.get("tracks",  {}).get("items", []) or
+            charts.get("trending", {}).get("items", [])
+        )
+
+        if not items:
+            log.warning("⚠️  ytmusicapi returned no chart items for country=%s", country)
+            return []
+
+        songs = []
+        for item in items:
+            if len(songs) >= limit:
                 break
-                
-            video_id = item.get('videoId')
-            title = item.get('title')
-            
-            # Artists is usually a list of dictionaries, we extract the names and join them
-            artists_list = item.get('artists', [])
-            artist_name = ", ".join([a.get('name') for a in artists_list if a.get('name')])
-            
-            if not artist_name:
-                artist_name = "Unknown Artist"
 
-            if video_id and title:
-                songs_data.append({
-                    "video_id": video_id,
-                    "title": title,
-                    "artist": artist_name
-                })
-                
-        log.info(f"✅ Successfully scraped {len(songs_data)} songs from the charts.")
-        return songs_data
+            video_id = item.get("videoId")
+            title    = item.get("title")
 
-    except Exception as e:
-        log.error(f"❌ Failed to scrape charts: {e}")
+            # Artists field is a list of {"name": ..., "id": ...} dicts
+            artist_list = item.get("artists", [])
+            artist      = ", ".join(
+                a["name"] for a in artist_list if a.get("name")
+            ) or "Unknown Artist"
+
+            if not video_id or not title:
+                continue
+
+            songs.append({
+                "video_id": video_id,
+                "title":    title,
+                "artist":   artist,
+                "url":      f"https://www.youtube.com/watch?v={video_id}",
+            })
+
+        log.info("✅ Scraped %d songs from YouTube Music charts.", len(songs))
+        return songs
+
+    except Exception as exc:
+        log.error("❌ Chart scrape failed: %s", exc)
         return []
 
-# --- Independent Testing ---
-# You can run this file directly to test if it works without booting the whole bot!
+
+# ── CLI ────────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    print("Testing Chart Scraper...")
-    results = scrape_top_charts(limit=5)
+    parser = argparse.ArgumentParser(description="EchoForge Chart Scraper")
+    parser.add_argument("--limit",   type=int, default=10,  help="Number of songs to fetch")
+    parser.add_argument("--country", default="US",          help="Country code (default: US)")
+    args = parser.parse_args()
+
+    results = scrape_top_charts(limit=args.limit, country=args.country)
+
+    if not results:
+        print("❌ No results returned.")
+        sys.exit(1)
+
+    print(f"\n✅ Top {len(results)} songs:\n")
     for i, s in enumerate(results, 1):
-        print(f"{i}. {s['title']} by {s['artist']} (ID: {s['video_id']})")
+        print(f"  {i:>2}. {s['title']} — {s['artist']}")
+        print(f"       {s['url']}")
+    sys.exit(0)

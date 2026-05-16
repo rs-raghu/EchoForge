@@ -1,8 +1,21 @@
-import os
-import sys
-import re
+"""
+engine/workers/fetch_lyrics.py
 
-# Ensure the root directory is in the Python path
+Fetches synced (.lrc) or plain-text (.txt) lyrics and saves them
+to the song's workspace directory.
+
+Bug 2 fix — sys.exit(0/1) instead of return True/False.
+
+CLI USAGE:
+    python fetch_lyrics.py --title "Blinding Lights" --artist "The Weeknd" \\
+                           --workspace ./workspaces/abc123
+"""
+
+import argparse
+import os
+import re
+import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from utils.logger import get_logger
@@ -12,75 +25,78 @@ log = get_logger(__name__)
 try:
     import syncedlyrics
 except ImportError:
-    log.error("❌ 'syncedlyrics' is not installed! Run: pip install syncedlyrics")
+    log.error("❌ 'syncedlyrics' not installed. Run: pip install syncedlyrics")
     syncedlyrics = None
 
-def fetch(song):
+
+def fetch(song: dict) -> bool:
     """
-    Fetches lyrics for the given song.
-    Prefers synced .lrc files. Falls back to plain text .txt files.
-    
-    Returns True on success, False if no lyrics were found.
+    Fetch lyrics for *song*.
+    Saves lyrics.lrc (synced) or lyrics.txt (plain) in workspace_dir.
+    Returns True on success, False if nothing was found.
     """
     if not syncedlyrics:
-        log.error("syncedlyrics module is missing. Cannot fetch lyrics.")
+        log.error("❌ syncedlyrics missing — cannot fetch lyrics.")
         return False
 
-    title = song.get('title', '').strip()
-    artist = song.get('artist', '').strip()
-    workspace_dir = song.get('workspace_dir')
+    title         = song.get("title", "").strip()
+    artist        = song.get("artist", "").strip()
+    workspace_dir = song.get("workspace_dir")
 
     if not title or not workspace_dir:
-        log.error("❌ Missing title or workspace directory for lyrics fetch.")
+        log.error("❌ Missing title or workspace_dir.")
         return False
 
     lrc_path = os.path.join(workspace_dir, "lyrics.lrc")
     txt_path = os.path.join(workspace_dir, "lyrics.txt")
 
-    # Check if lyrics were already fetched (or manually added via Telegram)
+    # Already fetched (manual upload or prior run)
     if os.path.exists(lrc_path) or os.path.exists(txt_path):
-        log.info("✅ Lyrics already exist in the workspace. Skipping fetch.")
+        log.info("✅ Lyrics already in workspace — skipping fetch.")
         return True
 
-    search_query = f"{title} {artist}"
-    log.info(f"📝 Searching for lyrics: '{search_query}'...")
+    query = f"{title} {artist}".strip()
+    log.info("📝 Searching for lyrics: '%s'", query)
 
     try:
-        # syncedlyrics searches multiple providers and prioritizes synced LRCs
-        lyrics_content = syncedlyrics.search(search_query)
-        
-        if not lyrics_content:
-            log.warning(f"⚠️ No lyrics found anywhere for '{search_query}'.")
+        content = syncedlyrics.search(query)
+
+        if not content:
+            log.warning("⚠️  No lyrics found for '%s'.", query)
             return False
 
-        # Check if the fetched content actually has timestamps (e.g., [01:23.45])
-        is_synced = bool(re.search(r'\[\d{2}:\d{2}\.\d{2,3}\]', lyrics_content))
+        is_synced = bool(re.search(r"\[\d{2}:\d{2}\.\d{2,3}\]", content))
 
         if is_synced:
-            with open(lrc_path, "w", encoding="utf-8") as f:
-                f.write(lyrics_content)
-            log.info(f"✅ Found SYNCED lyrics! Saved to {lrc_path}")
+            with open(lrc_path, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            log.info("✅ Synced lyrics saved: %s", lrc_path)
         else:
-            # Strip any weird formatting and save as plain text
-            clean_text = "\n".join([line.strip() for line in lyrics_content.split('\n') if line.strip()])
-            with open(txt_path, "w", encoding="utf-8") as f:
-                f.write(clean_text)
-            log.info(f"✅ Found PLAIN TEXT lyrics. Saved to {txt_path}")
+            clean = "\n".join(
+                line.strip() for line in content.split("\n") if line.strip()
+            )
+            with open(txt_path, "w", encoding="utf-8") as fh:
+                fh.write(clean)
+            log.info("✅ Plain-text lyrics saved: %s", txt_path)
 
         return True
 
-    except Exception as e:
-        log.exception(f"❌ Unexpected error fetching lyrics: {e}")
+    except Exception as exc:
+        log.exception("❌ Unexpected error fetching lyrics: %s", exc)
         return False
 
-# --- Independent Testing ---
+
+# ── CLI ────────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    print("Testing Fetch Lyrics Worker...")
-    test_song = {
-        "title": "Blinding Lights",
-        "artist": "The Weeknd",
-        "workspace_dir": "./test_workspace"
-    }
-    os.makedirs(test_song["workspace_dir"], exist_ok=True)
-    success = fetch(test_song)
-    print(f"Fetch Success: {success}")
+    parser = argparse.ArgumentParser(description="EchoForge Lyrics Fetcher")
+    parser.add_argument("--title",     required=True)
+    parser.add_argument("--artist",    required=True)
+    parser.add_argument("--workspace", required=True)
+    args = parser.parse_args()
+
+    os.makedirs(args.workspace, exist_ok=True)
+    song = {"title": args.title, "artist": args.artist, "workspace_dir": args.workspace}
+    ok   = fetch(song)
+    print(f"\n{'✅ Success' if ok else '❌ Failed'}")
+    sys.exit(0 if ok else 1)

@@ -2,3 +2,5 @@
 2026-05-14 09:06:16 | WARNING  | [__main__] ⚠️ No valid OAuth token found!
 2026-05-14 09:06:16 | WARNING  | [__main__] 👉 You MUST run this script manually in your terminal once to log in and generate the token.json file.
 2026-05-14 09:07:00 | INFO     | [__main__] ✅ Google API Token saved to D:\Hello World\Automations\EchoForge V3\database\token.json
+2026-05-16 10:57:52 | INFO     | [__main__] 🔄 Refreshing YouTube token...
+2026-05-16 10:57:53 | INFO     | [__main__] ✅ Token saved: D:\Hello World\Automations\EchoForge V3\database\token.json

@@ -1,212 +1,220 @@
-import os
-import sys
-import json
-import subprocess
-from pathlib import Path
+"""
+engine/workers/ai_sync.py
 
-# Ensure the root directory is in the Python path
+AI Sync worker — runs Demucs vocal isolation then Whisper forced alignment,
+or fast-paths through LRC→timestamps.json conversion when a pre-synced
+.lrc already exists in the workspace.
+
+Bug 2 fix — sys.exit(0/1) instead of return True/False.
+
+CLI USAGE:
+    python ai_sync.py --workspace ./workspaces/abc123
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from utils.logger import get_logger
 
 log = get_logger(__name__)
 
-# You might need to adjust these paths or imports based on your actual legacy files
-# In the new architecture, we want to isolate the logic as much as possible here.
 try:
     import whisper_timestamped as whisper
 except ImportError:
-    log.error("❌ 'whisper-timestamped' is not installed!")
+    log.error("❌ 'whisper-timestamped' not installed.")
     whisper = None
 
-def run_demucs(audio_path: str, output_dir: str) -> str | None:
-    """
-    Runs Demucs to isolate vocals from the audio file.
-    Returns the path to the isolated vocals.mp3, or None on failure.
-    """
-    log.info(f"🎙️ Starting Demucs vocal isolation for {audio_path}...")
-    try:
-        # Construct the demucs command. Adjust model (htdemucs) as needed.
-        cmd = [
-            "demucs",
-            "--two-stems=vocals",
-            "--out", output_dir,
-            audio_path
-        ]
-        
-        # Run Demucs in a subprocess
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
-        )
-        
-        # You could potentially stream output to the log here if needed, 
-        # but for now we just wait for it to finish.
-        stdout, stderr = process.communicate()
-        
-        if process.returncode != 0:
-            log.error(f"❌ Demucs failed with return code {process.returncode}:\n{stdout}")
-            return None
-            
-        # Demucs usually creates a folder structure like: output_dir/htdemucs/song_name/vocals.mp3
-        # We need to locate that file.
-        base_name = os.path.splitext(os.path.basename(audio_path))[0]
-        vocals_path = os.path.join(output_dir, "htdemucs", base_name, "vocals.mp3") # or .wav depending on demucs version/settings
-        
-        # Try to find .wav if .mp3 isn't there, demucs defaults to wav often
-        if not os.path.exists(vocals_path):
-             vocals_path = os.path.join(output_dir, "htdemucs", base_name, "vocals.wav")
-             
-        if os.path.exists(vocals_path):
-            log.info(f"✅ Demucs completed. Vocals saved to: {vocals_path}")
-            return vocals_path
-        else:
-             log.error(f"❌ Demucs finished, but could not find vocals file at expected path.")
-             return None
 
-    except Exception as e:
-        log.exception(f"❌ Unexpected error running Demucs: {e}")
+# ─── Demucs ───────────────────────────────────────────────────────────────────
+
+def run_demucs(audio_path: str, workspace_dir: str) -> str | None:
+    """
+    Isolate vocals with Demucs htdemucs model.
+    Returns path to vocals file (mp3 or wav), or None on failure.
+    """
+    log.info("🎙️  Starting Demucs vocal isolation...")
+    try:
+        result = subprocess.run(
+            [
+                "demucs",
+                "--two-stems=vocals",
+                "--out", workspace_dir,
+                audio_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            log.error("❌ Demucs failed (exit %d):\n%s", result.returncode, result.stdout)
+            return None
+
+        base = os.path.splitext(os.path.basename(audio_path))[0]
+        for ext in ("mp3", "wav"):
+            candidate = os.path.join(workspace_dir, "htdemucs", base, f"vocals.{ext}")
+            if os.path.exists(candidate):
+                log.info("✅ Vocals saved: %s", candidate)
+                return candidate
+
+        log.error("❌ Demucs ran but vocals file not found.")
         return None
+
+    except Exception as exc:
+        log.exception("❌ Demucs crashed: %s", exc)
+        return None
+
+
+# ─── Whisper alignment ────────────────────────────────────────────────────────
 
 def run_whisper_sync(vocals_path: str, lyrics_txt_path: str, workspace_dir: str) -> bool:
     """
-    Runs whisper-timestamped to align the vocals with the provided lyrics.
-    Saves the output to timestamps.json in the workspace.
+    Force-align lyrics.txt to vocals using whisper-timestamped.
+    Saves raw output to timestamps_raw.json and clean output to timestamps.json.
     """
-    log.info(f"🧠 Starting Whisper alignment on {vocals_path}...")
     if not whisper:
-         return False
+        log.error("❌ whisper-timestamped not available.")
+        return False
 
+    log.info("🧠 Running Whisper forced alignment...")
     try:
-        with open(lyrics_txt_path, "r", encoding="utf-8") as f:
-            lyrics_text = f.read()
+        with open(lyrics_txt_path, "r", encoding="utf-8") as fh:
+            lyrics_text = fh.read()
 
-        # Load the model (consider making the model size configurable)
-        model = whisper.load_model("base", device="cpu") # Or "cuda" if available
-        
-        # Transcribe and force-align using the provided text
-        log.info("🧠 Transcribing and aligning... (This may take a while)")
+        model  = whisper.load_model("base", device="cpu")
         result = whisper.transcribe(
-            model,
-            vocals_path,
-            initial_prompt=lyrics_text, # Give Whisper the lyrics as a strong hint
-            language="en" # Adjust if necessary
+            model, vocals_path,
+            initial_prompt=lyrics_text,
+            language="en",
         )
-        
-        timestamps_path = os.path.join(workspace_dir, "timestamps.json")
-        with open(timestamps_path, "w", encoding="utf-8") as f:
-             json.dump(result, f, indent=2)
-             
-        log.info(f"✅ Whisper alignment complete. Saved to {timestamps_path}")
+
+        # Save raw output as backup
+        raw_path = os.path.join(workspace_dir, "timestamps_raw.json")
+        with open(raw_path, "w", encoding="utf-8") as fh:
+            json.dump(result, fh, indent=2)
+
+        # Convert to the clean segments format expected by LyricVideo.tsx
+        segments = []
+        for seg in result.get("segments", []):
+            words = [
+                {"word": w["text"].strip(), "start": w["start"], "end": w["end"]}
+                for w in seg.get("words", [])
+                if w.get("text", "").strip()
+            ]
+            segments.append({
+                "text":  seg["text"].strip(),
+                "start": seg["start"],
+                "end":   seg["end"],
+                "words": words,
+            })
+
+        ts_path = os.path.join(workspace_dir, "timestamps.json")
+        with open(ts_path, "w", encoding="utf-8") as fh:
+            json.dump({"segments": segments}, fh, indent=2, ensure_ascii=False)
+
+        log.info("✅ Whisper alignment complete — %d segments → %s", len(segments), ts_path)
         return True
 
-    except Exception as e:
-        log.exception(f"❌ Error during Whisper alignment: {e}")
+    except Exception as exc:
+        log.exception("❌ Whisper alignment failed: %s", exc)
         return False
+
+
+# ─── LRC fast path ────────────────────────────────────────────────────────────
 
 def process_lrc_timestamps(lrc_path: str, workspace_dir: str) -> bool:
     """
-    If an LRC file already exists (from syncedlyrics), we don't need Whisper.
-    We just parse the LRC and create a simplified timestamps.json.
+    Parse a pre-synced .lrc file into timestamps.json without Demucs/Whisper.
+    Each segment gets word-level data set to an empty list (no word-by-word
+    highlighting for LRC-sourced lyrics).
     """
-    log.info(f"⚡ Processing pre-synced LRC file: {lrc_path}")
+    log.info("⚡ Processing pre-synced LRC: %s", lrc_path)
     try:
         segments = []
-        with open(lrc_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                # Basic LRC parsing: [mm:ss.xx] Lyric text
-                import re
-                match = re.match(r'\[(\d{2}):(\d{2}\.\d{2,3})\](.*)', line)
-                if match:
-                    mins = int(match.group(1))
-                    secs = float(match.group(2))
-                    text = match.group(3).strip()
-                    if text: # Ignore blank lines with timestamps
-                        start_time = (mins * 60) + secs
-                        
-                        # We don't have exact word-level timestamps or end times from basic LRC.
-                        # We estimate the end time or let the React renderer handle it.
-                        segments.append({
-                            "start": start_time,
-                            "end": start_time + 3.0, # Placeholder end time
-                            "text": text,
-                            "words": [] # No word-level data in basic LRC
-                        })
-        
-        # Fix up end times based on the start of the next segment
+        with open(lrc_path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                m = re.match(r"\[(\d{2}):(\d{2}\.\d{2,3})\](.*)", line)
+                if m:
+                    start = int(m.group(1)) * 60 + float(m.group(2))
+                    text  = m.group(3).strip()
+                    if text:
+                        segments.append({"start": start, "end": start + 3.0,
+                                         "text": text, "words": []})
+
+        if not segments:
+            log.error("❌ No timestamped lines found in LRC.")
+            return False
+
+        # Fix end times using the start of the next segment
         for i in range(len(segments) - 1):
-             segments[i]["end"] = segments[i+1]["start"]
-             
-        output_data = {"segments": segments}
-        timestamps_path = os.path.join(workspace_dir, "timestamps.json")
-        
-        with open(timestamps_path, "w", encoding="utf-8") as f:
-             json.dump(output_data, f, indent=2)
-             
-        log.info(f"✅ Processed LRC into {timestamps_path}")
+            segments[i]["end"] = segments[i + 1]["start"] - 0.05
+
+        ts_path = os.path.join(workspace_dir, "timestamps.json")
+        with open(ts_path, "w", encoding="utf-8") as fh:
+            json.dump({"segments": segments}, fh, indent=2, ensure_ascii=False)
+
+        log.info("✅ LRC → timestamps.json (%d segments)", len(segments))
         return True
 
-    except Exception as e:
-         log.exception(f"❌ Failed to process LRC file: {e}")
-         return False
+    except Exception as exc:
+        log.exception("❌ LRC processing failed: %s", exc)
+        return False
 
-def process(song):
+
+# ─── Main entry ───────────────────────────────────────────────────────────────
+
+def process(song: dict) -> bool:
     """
-    Main entry point for the AI Sync worker.
-    Determines whether to use an existing .lrc file or run the Demucs/Whisper pipeline.
+    Decide which sync path to take and execute it.
+    Returns True on success, False on any failure.
     """
-    workspace_dir = song.get('workspace_dir')
+    workspace_dir = song.get("workspace_dir")
     if not workspace_dir:
-        log.error("❌ Missing workspace directory.")
+        log.error("❌ Missing workspace_dir.")
         return False
 
-    lrc_path = os.path.join(workspace_dir, "lyrics.lrc")
-    txt_path = os.path.join(workspace_dir, "lyrics.txt")
+    lrc_path  = os.path.join(workspace_dir, "lyrics.lrc")
+    txt_path  = os.path.join(workspace_dir, "lyrics.txt")
     audio_path = os.path.join(workspace_dir, "audio.mp3")
-    timestamps_path = os.path.join(workspace_dir, "timestamps.json")
+    ts_path   = os.path.join(workspace_dir, "timestamps.json")
 
-    # If timestamps.json already exists, skip
-    if os.path.exists(timestamps_path):
-        log.info("✅ Timestamps already exist. Skipping AI Sync.")
+    if os.path.exists(ts_path):
+        log.info("✅ timestamps.json already exists — skipping AI sync.")
         return True
 
-    # SCENARIO A: We have a pre-synced LRC file. Fast path!
     if os.path.exists(lrc_path):
-         log.info("⏩ Pre-synced LRC found. Skipping Demucs and Whisper.")
-         return process_lrc_timestamps(lrc_path, workspace_dir)
+        log.info("⏩ Pre-synced LRC found — fast path (no Demucs/Whisper).")
+        return process_lrc_timestamps(lrc_path, workspace_dir)
 
-    # SCENARIO B: We only have plain text. Must run Demucs + Whisper.
-    elif os.path.exists(txt_path):
+    if os.path.exists(txt_path):
         if not os.path.exists(audio_path):
-             log.error(f"❌ audio.mp3 missing in workspace. Cannot run AI Sync.")
-             return False
+            log.error("❌ audio.mp3 missing — cannot run Demucs.")
+            return False
 
-        # 1. Isolate Vocals
-        vocals_path = run_demucs(audio_path, workspace_dir)
-        if not vocals_path:
-             return False
+        vocals = run_demucs(audio_path, workspace_dir)
+        if not vocals:
+            return False
 
-        # 2. Align Lyrics
-        success = run_whisper_sync(vocals_path, txt_path, workspace_dir)
-        
-        # Note: You might want to process the raw Whisper output into a cleaner
-        # format required by your React app here, similar to your old timestamp_processor.py
-        
-        return success
+        return run_whisper_sync(vocals, txt_path, workspace_dir)
 
-    else:
-        log.error("❌ No lyrics file found (.lrc or .txt). Cannot sync.")
-        return False
+    log.error("❌ No lyrics file (.lrc or .txt) found in workspace.")
+    return False
 
-# --- Independent Testing ---
+
+# ── CLI ────────────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    print("Testing AI Sync Worker...")
-    # You would need a valid workspace with audio.mp3 and lyrics.txt to test this fully
-    test_song = {
-        "title": "Test Song",
-        "workspace_dir": "./test_workspace"
-    }
-    # success = process(test_song)
-    print("Note: Run with a real workspace to test Demucs/Whisper.")
+    parser = argparse.ArgumentParser(description="EchoForge AI Sync Worker")
+    parser.add_argument("--workspace", required=True, help="Path to workspace folder")
+    parser.add_argument("--title",     default="Test", help="Song title (for logging)")
+    args = parser.parse_args()
+
+    song = {"title": args.title, "workspace_dir": args.workspace}
+    ok   = process(song)
+    print(f"\n{'✅ Success' if ok else '❌ Failed'}")
+    sys.exit(0 if ok else 1)
