@@ -27,6 +27,39 @@ log = get_logger(__name__)
 ROOT_DIR    = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 REMOTION_DIR = os.path.join(ROOT_DIR, "remotion")
 PUBLIC_DIR   = os.path.join(REMOTION_DIR, "public")
+FPS = 30
+
+
+def _get_audio_duration_seconds(audio_path: str) -> float | None:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                audio_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return float(result.stdout.strip())
+    except Exception as exc:
+        log.warning("Could not read audio duration with ffprobe: %s", exc)
+    return None
+
+
+def _get_timestamp_duration_seconds(ts_path: str) -> float | None:
+    try:
+        with open(ts_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        segments = data.get("segments", [])
+        if segments:
+            return float(max(segment.get("end", 0) for segment in segments))
+    except Exception as exc:
+        log.warning("Could not read timestamp duration: %s", exc)
+    return None
 
 
 def render(song: dict) -> bool:
@@ -64,6 +97,13 @@ def render(song: dict) -> bool:
     log.info("🎬 Preparing Remotion render for '%s'...", title)
 
     try:
+        duration_seconds = (
+            _get_audio_duration_seconds(audio_path)
+            or _get_timestamp_duration_seconds(ts_path)
+            or 60
+        )
+        duration_in_frames = max(int((duration_seconds + 2) * FPS), FPS)
+
         os.makedirs(PUBLIC_DIR, exist_ok=True)
 
         # Stage assets
@@ -76,6 +116,7 @@ def render(song: dict) -> bool:
             "artist":        artist,
             "audioUrl":      "audio.mp3",
             "timestampsUrl": "timestamps.json",
+            "durationInFrames": duration_in_frames,
         }
         props_file = os.path.join(REMOTION_DIR, "current_props.json")
         with open(props_file, "w", encoding="utf-8") as fh:
@@ -93,7 +134,8 @@ def render(song: dict) -> bool:
                 f"--props={props_file}",
             ],
             cwd=REMOTION_DIR,
-            capture_output=False,   # stream stdout so progress is visible in logs
+            capture_output=True,
+            text=True,
             shell=use_shell,
         )
 
@@ -112,6 +154,10 @@ def render(song: dict) -> bool:
             log.info("✅ Video rendered: %s", output_video)
             return True
 
+        if proc.stdout:
+            log.error("Remotion stdout:\n%s", proc.stdout[-4000:])
+        if proc.stderr:
+            log.error("Remotion stderr:\n%s", proc.stderr[-4000:])
         log.error("❌ Remotion render failed (exit code %d).", proc.returncode)
         return False
 

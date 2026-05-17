@@ -265,6 +265,30 @@ def set_target_state(video_id: str, target_macro: str) -> None:
         conn.close()
 
 
+def update_song_metadata(video_id: str, title: str, artist: str) -> None:
+    """Update the display title and artist used by the bot and video renderer."""
+    with _LOCK:
+        conn = _get_conn()
+        conn.execute(
+            "UPDATE songs SET title=?, artist=?, updated_at=CURRENT_TIMESTAMP WHERE video_id=?",
+            (title, artist, video_id),
+        )
+        conn.commit()
+        conn.close()
+
+
+def update_song_source(video_id: str, url: str) -> None:
+    """Update the source URL used by the audio downloader."""
+    with _LOCK:
+        conn = _get_conn()
+        conn.execute(
+            "UPDATE songs SET url=?, updated_at=CURRENT_TIMESTAMP WHERE video_id=?",
+            (url, video_id),
+        )
+        conn.commit()
+        conn.close()
+
+
 # ─── Kill switch ──────────────────────────────────────────────────────────────
 
 def request_abort(video_id: str) -> None:

@@ -3,8 +3,9 @@
 .env
 client_secrets.json
 workspaces/
-logs/.log
-database/.db
+logs/*.log
+database/*.db
+database/*.db-*
 database/token.json
 remotion/current_props.json
 remotion/public/audio.mp3

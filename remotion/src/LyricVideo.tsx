@@ -1,57 +1,5 @@
 import React, { useState, useEffect } from 'react';
-
-// --- REMOTION MOCKS FOR PREVIEW ---
-// The preview environment cannot resolve the 'remotion' package.
-// We mock its core components here for the preview to work.
-// When running locally, replace this block with:
-// import { AbsoluteFill, Audio, interpolate, Sequence, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
-
-export const AbsoluteFill: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ style, ...props }) => (
-  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', ...style }} {...props} />
-);
-
-export const Audio: React.FC<{ src: string }> = ({ src }) => <audio src={src} autoPlay />;
-
-export const Sequence: React.FC<{ from: number; durationInFrames?: number; children: React.ReactNode }> = ({ from, durationInFrames, children }) => {
-  const frame = useCurrentFrame();
-  const isVisible = frame >= from && (durationInFrames === undefined || frame < from + durationInFrames);
-  return isVisible ? <>{children}</> : null;
-};
-
-export const interpolate = (input: number, inputRange: number[], outputRange: number[], options?: any) => {
-  if (input <= inputRange[0]) return outputRange[0];
-  if (input >= inputRange[inputRange.length - 1]) return outputRange[outputRange.length - 1];
-  for (let i = 0; i < inputRange.length - 1; i++) {
-    if (input >= inputRange[i] && input <= inputRange[i + 1]) {
-       const progress = (input - inputRange[i]) / (inputRange[i + 1] - inputRange[i]);
-       return outputRange[i] + progress * (outputRange[i + 1] - outputRange[i]);
-    }
-  }
-  return outputRange[0];
-};
-
-export const staticFile = (path: string) => path;
-
-// Simulate a running frame counter for the preview at 30fps
-let globalFrame = 0;
-const frameListeners: Set<Function> = new Set();
-setInterval(() => {
-  globalFrame++;
-  frameListeners.forEach(fn => fn(globalFrame));
-}, 1000 / 30);
-
-export const useCurrentFrame = () => {
-  const [frame, setFrame] = useState(0);
-  useEffect(() => {
-    const handler = (f: number) => setFrame(f);
-    frameListeners.add(handler);
-    return () => { frameListeners.delete(handler); }
-  }, []);
-  return frame;
-};
-
-export const useVideoConfig = () => ({ fps: 30, durationInFrames: 3000 });
-// --- END REMOTION MOCKS ---
+import { AbsoluteFill, Audio, interpolate, Sequence, staticFile, useCurrentFrame, useVideoConfig } from 'remotion';
 
 interface Word {
   word: string;
@@ -74,21 +22,28 @@ export interface LyricVideoProps {
 }
 
 const useTimestamps = (url: string): { segments: Segment[] } | null => {
-  const [data, setData] = React.useState<{ segments: Segment[] } | null>(null);
+  const [data, setData] = useState<{ segments: Segment[] } | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
+    if (!url) {
+      setData({ segments: [] });
+      return;
+    }
+
     fetch(staticFile(url))
-      .then((res) => res.json())
-      .then((json) => setData(json))
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`Failed to load timestamps: ${res.status} ${res.statusText}`);
+        }
+        return res.json();
+      })
+      .then((json) => {
+        const segments = Array.isArray(json?.segments) ? json.segments : [];
+        setData({ segments });
+      })
       .catch((err) => {
         console.error('Error fetching timestamps:', err);
-        // Fallback mock data so the preview doesn't stay black
-        setData({
-          segments: [
-            { start: 0, end: 3, text: "Simulated Preview Line 1", words: [{word: "Simulated", start: 0, end: 1}, {word: "Preview", start: 1, end: 2}, {word: "Line 1", start: 2, end: 3}] },
-            { start: 3, end: 6, text: "Please use actual environment for full render", words: [{word: "Please", start: 3, end: 3.5}, {word: "use", start: 3.5, end: 4}, {word: "actual", start: 4, end: 5}, {word: "environment", start: 5, end: 6}] }
-          ]
-        });
+        setData({ segments: [] });
       });
   }, [url]);
 
@@ -134,20 +89,44 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
   }
 
   const { segments } = lyricsData;
+  const hasSegments = segments.length > 0;
 
+  const currentTime = frame / fps;
   const currentSegmentIndex = segments.findIndex((segment) => {
-    const startFrame = segment.start * fps;
-    const endFrame = segment.end * fps;
-    return frame >= startFrame && frame <= endFrame;
+    return currentTime >= segment.start && currentTime <= segment.end;
   });
 
   const activeSegment = segments[currentSegmentIndex];
-  const previousSegment = segments[currentSegmentIndex - 1];
-  const nextSegment = segments[currentSegmentIndex + 1];
+
+  const renderWords = (segment: Segment) => {
+    if (!segment.words || segment.words.length === 0) {
+      return segment.text;
+    }
+
+    return segment.words.map((w, idx) => {
+      const wordStartFrame = w.start * fps;
+      const wordEndFrame = w.end * fps;
+      const isWordActive = frame >= wordStartFrame && frame <= wordEndFrame;
+      const isWordPassed = frame > wordEndFrame;
+
+      let color = 'inherit';
+      if (isWordActive) color = '#FFD700';
+      else if (isWordPassed) color = '#aaa';
+
+      const needsSpace = !w.word.trim().endsWith('-');
+
+      return (
+        <span key={idx}>
+          <span style={{ color }}>{w.word}</span>
+          {needsSpace && ' '}
+        </span>
+      );
+    });
+  };
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#111', color: 'white', fontFamily: 'sans-serif' }}>
-      <Audio src={staticFile(audioUrl)} />
+      {audioUrl ? <Audio src={staticFile(audioUrl)} /> : null}
 
       <Sequence from={0} durationInFrames={LOGO_DURATION_FRAMES}>
         <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', opacity: logoOpacity }}>
@@ -159,49 +138,24 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
 
       <Sequence from={LOGO_DURATION_FRAMES} durationInFrames={DETAILS_DURATION_FRAMES}>
         <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', opacity: detailsOpacity }}>
-          <div style={{ fontSize: 60, fontWeight: 'bold', marginBottom: 20 }}>{title}</div>
-          <div style={{ fontSize: 40, color: '#ccc' }}>{artist}</div>
+          <div style={{ fontSize: 72, fontWeight: 'bold', marginBottom: 24, maxWidth: '82%', textAlign: 'center' }}>{title}</div>
+          <div style={{ fontSize: 42, color: '#ccc', maxWidth: '82%', textAlign: 'center' }}>{artist}</div>
         </AbsoluteFill>
       </Sequence>
 
       <Sequence from={LYRICS_START_FRAME} durationInFrames={durationInFrames - LYRICS_START_FRAME}>
-        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', padding: '0 10%' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', textAlign: 'center', width: '100%' }}>
+        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', padding: '0 12%' }}>
+          <div style={{ width: '100%', minHeight: 120, textAlign: 'center' }}>
             
-            <div style={{ fontSize: 40, color: '#666', minHeight: '50px', opacity: 0.5, transition: 'all 0.3s' }}>
-              {previousSegment ? previousSegment.text : ''}
-            </div>
-
-            <div style={{ fontSize: 60, fontWeight: 'bold', color: 'white', minHeight: '80px', display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '15px' }}>
-              {activeSegment ? (
-                 activeSegment.words && activeSegment.words.length > 0 ? (
-                    activeSegment.words.map((w, idx) => {
-                        const wordStartFrame = w.start * fps;
-                        const wordEndFrame = w.end * fps;
-                        const isWordActive = frame >= wordStartFrame && frame <= wordEndFrame;
-                        const isWordPassed = frame > wordEndFrame;
-
-                        let color = 'white';
-                        if (isWordActive) color = '#FFD700';
-                        else if (isWordPassed) color = '#aaa';
-
-                        return (
-                            <span key={idx} style={{ color, transition: 'color 0.1s' }}>
-                                {w.word}
-                            </span>
-                        );
-                    })
-                 ) : (
-                     <span>{activeSegment.text}</span>
-                 )
-              ) : (
-                 <span style={{ color: '#333' }}>...</span>
-              )}
-            </div>
-
-            <div style={{ fontSize: 40, color: '#666', minHeight: '50px', opacity: 0.5 }}>
-              {nextSegment ? nextSegment.text : ''}
-            </div>
+            {hasSegments ? (
+              <div style={{ fontSize: 74, fontWeight: 800, color: 'white', lineHeight: 1.18 }}>
+                {activeSegment ? renderWords(activeSegment) : ''}
+              </div>
+            ) : (
+              <div style={{ fontSize: 48, color: '#777', minHeight: '80px', textAlign: 'center' }}>
+                No lyrics available
+              </div>
+            )}
 
           </div>
         </AbsoluteFill>
@@ -209,15 +163,3 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
     </AbsoluteFill>
   );
 };
-
-// Main App component required for the preview environment
-export default function App() {
-  return (
-    <LyricVideo 
-      title="Preview Title" 
-      artist="Preview Artist" 
-      audioUrl="audio.mp3" 
-      timestampsUrl="timestamps.json" 
-    />
-  );
-}

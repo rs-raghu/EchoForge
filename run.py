@@ -22,6 +22,10 @@ import sys
 import threading
 import time
 
+os.environ["PYTHONIOENCODING"] = "utf-8"
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
+
 ROOT_DIR   = os.path.dirname(os.path.abspath(__file__))
 ORCH_PATH  = os.path.join(ROOT_DIR, "engine", "orchestrator.py")
 BOT_PATH   = os.path.join(ROOT_DIR, "bot",    "main.py")

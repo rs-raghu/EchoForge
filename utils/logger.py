@@ -25,6 +25,10 @@ import os
 import sys
 from logging.handlers import RotatingFileHandler
 
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+
 # Resolve paths relative to the project root (two levels up from this file)
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOGS_DIR = os.path.join(ROOT_DIR, "logs")
