@@ -1,0 +1,356 @@
+2026-05-14 08:51:05 | ERROR    | [__main__] ❌ Missing D:\Hello World\Automations\EchoForge V3\client_secrets.json. Please download it from Google Cloud Console.
+2026-05-14 09:06:16 | WARNING  | [__main__] ⚠️ No valid OAuth token found!
+2026-05-14 09:06:16 | WARNING  | [__main__] 👉 You MUST run this script manually in your terminal once to log in and generate the token.json file.
+2026-05-14 09:07:00 | INFO     | [__main__] ✅ Google API Token saved to D:\Hello World\Automations\EchoForge V3\database\token.json
+2026-05-16 10:57:52 | INFO     | [__main__] 🔄 Refreshing YouTube token...
+2026-05-16 10:57:53 | INFO     | [__main__] ✅ Token saved: D:\Hello World\Automations\EchoForge V3\database\token.json
+2026-05-16 11:11:11 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 11:11:11 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 11:11:12 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 11:11:22 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 11:11:22 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 11:21:19 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 11:21:19 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 11:21:20 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 11:21:21 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 11:21:21 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 11:21:50 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 11:22:01 | INFO     | [discovery.chart_scraper] 🔍 Fetching YouTube Music charts (country=US, limit=20)...
+2026-05-16 11:22:03 | ERROR    | [discovery.chart_scraper] ❌ Chart scrape failed: 'list' object has no attribute 'get'
+2026-05-16 11:22:26 | INFO     | [discovery.chart_scraper] 🔍 Fetching YouTube Music charts (country=US, limit=20)...
+2026-05-16 11:22:28 | ERROR    | [discovery.chart_scraper] ❌ Chart scrape failed: 'list' object has no attribute 'get'
+2026-05-16 11:26:46 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 11:26:46 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 11:26:46 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 11:26:52 | INFO     | [discovery.chart_scraper] 🔍 Fetching YouTube Music charts (country=US, limit=20)...
+2026-05-16 11:26:53 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 11:26:53 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 11:26:54 | WARNING  | [discovery.chart_scraper] ⚠️  ytmusicapi returned no standard chart items. Attempting fallback playlist...
+2026-05-16 11:26:54 | ERROR    | [discovery.chart_scraper] ❌ Fallback playlist fetch failed: "Unable to find 'contents' using path ['contents', 'twoColumnBrowseResultsRenderer', 'tabs', 0, 'tabRenderer', 'content', 'sectionListRenderer', 'contents', 0] on {'responseContext': {'serviceTrackingParams': [{'service': 'GFEEDBACK', 'params': [{'key': 'has_unlimited_entitlement', 'value': 'False'}, {'key': 'browse_id', 'value': 'VLPL4fGSI1pLj5jgwpi-ZXcrEz9F02bZz3Zf'}, {'key': 'browse_id_prefix', 'value': ''}, {'key': 'logged_in', 'value': '0'}]}, {'service': 'CSI', 'params': [{'key': 'c', 'value': 'WEB_REMIX'}, {'key': 'cver', 'value': '1.20260516.01.00'}, {'key': 'yt_li', 'value': '0'}, {'key': 'GetBrowsePlaylistDetailPage_rid', 'value': '0x1364f3060e957c1e'}]}, {'service': 'ECATCHER', 'params': [{'key': 'client.version', 'value': '1.20000101'}, {'key': 'client.name', 'value': 'WEB_REMIX'}]}], 'responseId': 'IhMIvojd-I-9lAMVxz63AB0RoygV'}, 'trackingParams': 'CAAQhGciEwi-iN34j72UAxXHPrcAHRGjKBXKAQRhG4bY', 'microformat': {'microformatDataRenderer': {'noindex': True}}}, exception: 'contents'"
+2026-05-16 11:26:54 | WARNING  | [discovery.chart_scraper] ⚠️  Failed to retrieve any chart items for country=US
+2026-05-16 11:35:59 | ERROR    | [discovery.chart_scraper] ❌ Dependencies missing. Run: pip install playwright beautifulsoup4 && playwright install
+2026-05-16 11:35:59 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 11:35:59 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 11:35:59 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 11:36:01 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 11:36:01 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 11:40:27 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 11:40:27 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 11:40:28 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 11:40:32 | INFO     | [discovery.chart_scraper] 🔍 Scraping YouTube Charts via Playwright (https://charts.youtube.com/charts/TopSongs/us/weekly)...
+2026-05-16 11:40:32 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 11:40:32 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 11:41:01 | INFO     | [discovery.chart_scraper] ✅ Scraped 20 songs from charts.youtube.com.
+2026-05-16 11:43:11 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running DOWNLOADING_AUDIO
+2026-05-16 11:43:17 | INFO     | [engine.workers.fetch_audio] ⬇️  Downloading audio for 'Choosin' Texas' from https://www.youtube.com/watch?v=nUsrYVxrDwI
+2026-05-16 11:43:30 | INFO     | [engine.workers.fetch_audio] ✅ Audio saved: D:\Hello World\Automations\EchoForge V3\workspaces\nUsrYVxrDwI\audio.mp3
+2026-05-16 11:43:31 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Choosin' Texas')
+2026-05-16 11:43:31 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running FETCHING_LYRICS
+2026-05-16 11:43:35 | INFO     | [engine.workers.fetch_lyrics] 📝 Searching for lyrics: 'Choosin' Texas Ella Langley'
+2026-05-16 11:43:38 | INFO     | [engine.workers.fetch_lyrics] ✅ Synced lyrics saved: D:\Hello World\Automations\EchoForge V3\workspaces\nUsrYVxrDwI\lyrics.lrc
+2026-05-16 11:43:40 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Choosin' Texas')
+2026-05-16 11:44:16 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running RUNNING_AI_SYNC
+2026-05-16 11:44:25 | INFO     | [engine.workers.ai_sync] ⏩ Pre-synced LRC found — fast path (no Demucs/Whisper).
+2026-05-16 11:44:25 | INFO     | [engine.workers.ai_sync] ⚡ Processing pre-synced LRC: D:\Hello World\Automations\EchoForge V3\workspaces\nUsrYVxrDwI\lyrics.lrc
+2026-05-16 11:44:25 | INFO     | [engine.workers.ai_sync] ✅ LRC → timestamps.json (41 segments)
+2026-05-16 11:44:28 | INFO     | [__main__] ✅ LYRICS_APPROVED → ASSETS_READY  ('Choosin' Texas')
+2026-05-16 11:44:28 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running RENDERING_VIDEO
+2026-05-16 11:44:36 | INFO     | [engine.workers.render_video] 🎬 Preparing Remotion render for 'Choosin' Texas'...
+2026-05-16 11:44:36 | INFO     | [engine.workers.render_video] 🔥 Starting Remotion render engine...
+2026-05-16 11:45:22 | ERROR    | [engine.workers.render_video] ❌ Remotion render failed (exit code 1).
+2026-05-16 11:45:23 | ERROR    | [__main__] ❌ Worker crashed during RENDERING_VIDEO for 'Choosin' Texas' (exit code 1).
+2026-05-16 11:53:21 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 11:53:21 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 11:53:22 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 11:53:28 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 11:53:28 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 11:59:02 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running DOWNLOADING_AUDIO
+2026-05-16 11:59:13 | INFO     | [engine.workers.fetch_audio] ⬇️  Downloading audio for 'Golden' from https://www.youtube.com/watch?v=9_bTl2vvYQg
+2026-05-16 11:59:20 | INFO     | [engine.workers.fetch_audio] ✅ Audio saved: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\audio.mp3
+2026-05-16 11:59:21 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Golden')
+2026-05-16 11:59:21 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running FETCHING_LYRICS
+2026-05-16 11:59:27 | INFO     | [engine.workers.fetch_lyrics] 📝 Searching for lyrics: 'Golden HUNTR/X, EJAE, AUDREY NUNA, REI AMI, KPop Demon Hunters Cast'
+2026-05-16 11:59:30 | INFO     | [engine.workers.fetch_lyrics] ✅ Synced lyrics saved: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\lyrics.lrc
+2026-05-16 11:59:31 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Golden')
+2026-05-16 12:01:24 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running RUNNING_AI_SYNC
+2026-05-16 12:01:31 | INFO     | [engine.workers.ai_sync] ⏩ Pre-synced LRC found — fast path (no Demucs/Whisper).
+2026-05-16 12:01:31 | INFO     | [engine.workers.ai_sync] ⚡ Processing pre-synced LRC: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\lyrics.lrc
+2026-05-16 12:01:31 | INFO     | [engine.workers.ai_sync] ✅ LRC → timestamps.json (51 segments)
+2026-05-16 12:01:33 | INFO     | [__main__] ✅ LYRICS_APPROVED → ASSETS_READY  ('Golden')
+2026-05-16 12:01:33 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running RENDERING_VIDEO
+2026-05-16 12:01:40 | INFO     | [engine.workers.render_video] 🎬 Preparing Remotion render for 'Golden'...
+2026-05-16 12:01:40 | INFO     | [engine.workers.render_video] 🔥 Starting Remotion render engine...
+2026-05-16 12:01:44 | ERROR    | [engine.workers.render_video] ❌ Remotion render failed (exit code 1).
+2026-05-16 12:01:46 | ERROR    | [__main__] ❌ Worker crashed during RENDERING_VIDEO for 'Golden' (exit code 1).
+2026-05-16 12:13:02 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 12:13:02 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 12:13:03 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 12:13:10 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 12:13:10 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 12:14:07 | INFO     | [__main__] ▶️  [Zi_XLOBD] Billie Jean  →  running DOWNLOADING_AUDIO
+2026-05-16 12:14:15 | INFO     | [engine.workers.fetch_audio] ⬇️  Downloading audio for 'Billie Jean' from https://www.youtube.com/watch?v=Zi_XLOBDo_Y
+2026-05-16 12:14:25 | INFO     | [engine.workers.fetch_audio] ✅ Audio saved: D:\Hello World\Automations\EchoForge V3\workspaces\Zi_XLOBDo_Y\audio.mp3
+2026-05-16 12:14:27 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Billie Jean')
+2026-05-16 12:14:27 | INFO     | [__main__] ▶️  [Zi_XLOBD] Billie Jean  →  running FETCHING_LYRICS
+2026-05-16 12:14:34 | INFO     | [engine.workers.fetch_lyrics] 📝 Searching for lyrics: 'Billie Jean Michael Jackson'
+2026-05-16 12:14:49 | INFO     | [engine.workers.fetch_lyrics] ✅ Synced lyrics saved: D:\Hello World\Automations\EchoForge V3\workspaces\Zi_XLOBDo_Y\lyrics.lrc
+2026-05-16 12:14:51 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Billie Jean')
+2026-05-16 12:15:23 | INFO     | [__main__] ▶️  [Zi_XLOBD] Billie Jean  →  running RUNNING_AI_SYNC
+2026-05-16 12:15:31 | INFO     | [engine.workers.ai_sync] ⏩ Pre-synced LRC found — fast path (no Demucs/Whisper).
+2026-05-16 12:15:31 | INFO     | [engine.workers.ai_sync] ⚡ Processing pre-synced LRC: D:\Hello World\Automations\EchoForge V3\workspaces\Zi_XLOBDo_Y\lyrics.lrc
+2026-05-16 12:15:31 | INFO     | [engine.workers.ai_sync] ✅ LRC → timestamps.json (64 segments)
+2026-05-16 12:15:32 | INFO     | [__main__] ✅ LYRICS_APPROVED → ASSETS_READY  ('Billie Jean')
+2026-05-16 12:15:32 | INFO     | [__main__] ▶️  [Zi_XLOBD] Billie Jean  →  running RENDERING_VIDEO
+2026-05-16 12:15:39 | INFO     | [engine.workers.render_video] 🎬 Preparing Remotion render for 'Billie Jean'...
+2026-05-16 12:15:39 | INFO     | [engine.workers.render_video] 🔥 Starting Remotion render engine...
+2026-05-16 12:15:45 | ERROR    | [engine.workers.render_video] ❌ Remotion render failed (exit code 1).
+2026-05-16 12:15:45 | ERROR    | [__main__] ❌ Worker crashed during RENDERING_VIDEO for 'Billie Jean' (exit code 1).
+2026-05-16 12:20:46 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 12:20:46 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 12:20:47 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 12:20:57 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 12:21:06 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 12:21:06 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 12:28:21 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 12:28:21 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 12:28:22 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 12:28:27 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 12:28:27 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 12:28:57 | INFO     | [__main__] ▶️  [oRdxUFDo] Beat It  →  running DOWNLOADING_AUDIO
+2026-05-16 12:29:06 | INFO     | [engine.workers.fetch_audio] ⬇️  Downloading audio for 'Beat It' from https://www.youtube.com/watch?v=oRdxUFDoQe0
+2026-05-16 12:29:15 | INFO     | [engine.workers.fetch_audio] ✅ Audio saved: D:\Hello World\Automations\EchoForge V3\workspaces\oRdxUFDoQe0\audio.mp3
+2026-05-16 12:29:16 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Beat It')
+2026-05-16 12:29:16 | INFO     | [__main__] ▶️  [oRdxUFDo] Beat It  →  running FETCHING_LYRICS
+2026-05-16 12:29:22 | INFO     | [engine.workers.fetch_lyrics] 📝 Searching for lyrics: 'Beat It Michael Jackson'
+2026-05-16 12:29:34 | INFO     | [engine.workers.fetch_lyrics] ✅ Synced lyrics saved: D:\Hello World\Automations\EchoForge V3\workspaces\oRdxUFDoQe0\lyrics.lrc
+2026-05-16 12:29:36 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Beat It')
+2026-05-16 12:30:02 | INFO     | [__main__] ▶️  [oRdxUFDo] Beat It  →  running RUNNING_AI_SYNC
+2026-05-16 12:30:09 | INFO     | [engine.workers.ai_sync] ⏩ Pre-synced LRC found — fast path (no Demucs/Whisper).
+2026-05-16 12:30:09 | INFO     | [engine.workers.ai_sync] ⚡ Processing pre-synced LRC: D:\Hello World\Automations\EchoForge V3\workspaces\oRdxUFDoQe0\lyrics.lrc
+2026-05-16 12:30:09 | INFO     | [engine.workers.ai_sync] ✅ LRC → timestamps.json (55 segments)
+2026-05-16 12:30:10 | INFO     | [__main__] ✅ LYRICS_APPROVED → ASSETS_READY  ('Beat It')
+2026-05-16 12:30:10 | INFO     | [__main__] ▶️  [oRdxUFDo] Beat It  →  running RENDERING_VIDEO
+2026-05-16 12:30:17 | INFO     | [engine.workers.render_video] 🎬 Preparing Remotion render for 'Beat It'...
+2026-05-16 12:30:17 | INFO     | [engine.workers.render_video] 🔥 Starting Remotion render engine...
+2026-05-16 12:31:30 | INFO     | [engine.workers.render_video] ✅ Video rendered: D:\Hello World\Automations\EchoForge V3\workspaces\oRdxUFDoQe0\final_video.mp4
+2026-05-16 12:31:31 | INFO     | [__main__] ✅ ASSETS_READY → PREVIEW_PENDING  ('Beat It')
+2026-05-16 12:34:10 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 12:34:26 | INFO     | [__main__] ▶️  [GZ3zL7kT] Lose Control (Live)  →  running DOWNLOADING_AUDIO
+2026-05-16 12:34:34 | INFO     | [engine.workers.fetch_audio] ⬇️  Downloading audio for 'Lose Control (Live)' from https://www.youtube.com/watch?v=GZ3zL7kT6_c
+2026-05-16 12:34:43 | INFO     | [engine.workers.fetch_audio] ✅ Audio saved: D:\Hello World\Automations\EchoForge V3\workspaces\GZ3zL7kT6_c\audio.mp3
+2026-05-16 12:34:45 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Lose Control (Live)')
+2026-05-16 12:34:45 | INFO     | [__main__] ▶️  [GZ3zL7kT] Lose Control (Live)  →  running FETCHING_LYRICS
+2026-05-16 12:34:53 | INFO     | [engine.workers.fetch_lyrics] 📝 Searching for lyrics: 'Lose Control (Live) Teddy Swims'
+2026-05-16 12:34:55 | INFO     | [engine.workers.fetch_lyrics] ✅ Synced lyrics saved: D:\Hello World\Automations\EchoForge V3\workspaces\GZ3zL7kT6_c\lyrics.lrc
+2026-05-16 12:34:57 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Lose Control (Live)')
+2026-05-16 12:35:11 | INFO     | [__main__] ▶️  [GZ3zL7kT] Lose Control (Live)  →  running RUNNING_AI_SYNC
+2026-05-16 12:35:19 | INFO     | [engine.workers.ai_sync] ⏩ Pre-synced LRC found — fast path (no Demucs/Whisper).
+2026-05-16 12:35:19 | INFO     | [engine.workers.ai_sync] ⚡ Processing pre-synced LRC: D:\Hello World\Automations\EchoForge V3\workspaces\GZ3zL7kT6_c\lyrics.lrc
+2026-05-16 12:35:19 | INFO     | [engine.workers.ai_sync] ✅ LRC → timestamps.json (39 segments)
+2026-05-16 12:35:21 | INFO     | [__main__] ✅ LYRICS_APPROVED → ASSETS_READY  ('Lose Control (Live)')
+2026-05-16 22:23:55 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 22:23:55 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 22:23:56 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 22:24:13 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 22:24:21 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 22:24:21 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 22:24:39 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running DOWNLOADING_AUDIO
+2026-05-16 22:24:46 | INFO     | [engine.workers.fetch_audio] ✅ audio.mp3 already exists — skipping download.
+2026-05-16 22:24:48 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Choosin' Texas')
+2026-05-16 22:24:48 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running FETCHING_LYRICS
+2026-05-16 22:24:55 | INFO     | [engine.workers.fetch_lyrics] ✅ Lyrics already in workspace — skipping fetch.
+2026-05-16 22:24:57 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Choosin' Texas')
+2026-05-16 22:25:22 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running RUNNING_AI_SYNC
+2026-05-16 22:25:29 | INFO     | [engine.workers.ai_sync] ✅ timestamps.json already exists — skipping AI sync.
+2026-05-16 22:25:31 | INFO     | [__main__] ✅ LYRICS_APPROVED → ASSETS_READY  ('Choosin' Texas')
+2026-05-16 22:25:31 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running RENDERING_VIDEO
+2026-05-16 22:25:38 | INFO     | [engine.workers.render_video] 🎬 Preparing Remotion render for 'Choosin' Texas'...
+2026-05-16 22:25:38 | INFO     | [engine.workers.render_video] 🔥 Starting Remotion render engine...
+2026-05-16 22:26:48 | INFO     | [engine.workers.render_video] ✅ Video rendered: D:\Hello World\Automations\EchoForge V3\workspaces\nUsrYVxrDwI\final_video.mp4
+2026-05-16 22:26:49 | INFO     | [__main__] ✅ ASSETS_READY → PREVIEW_PENDING  ('Choosin' Texas')
+2026-05-16 22:37:13 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 22:37:13 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 22:37:14 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 22:37:19 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 22:37:23 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 22:37:23 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 22:37:31 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running DOWNLOADING_AUDIO
+2026-05-16 22:37:42 | INFO     | [engine.workers.fetch_audio] ✅ audio.mp3 already exists — skipping download.
+2026-05-16 22:37:44 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Golden')
+2026-05-16 22:37:44 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running FETCHING_LYRICS
+2026-05-16 22:37:52 | INFO     | [engine.workers.fetch_lyrics] ✅ Lyrics already in workspace — skipping fetch.
+2026-05-16 22:37:54 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Golden')
+2026-05-16 22:38:10 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running RUNNING_AI_SYNC
+2026-05-16 22:38:16 | INFO     | [engine.workers.ai_sync] ✅ timestamps.json already exists — skipping AI sync.
+2026-05-16 22:38:17 | INFO     | [__main__] ✅ LYRICS_APPROVED → ASSETS_READY  ('Golden')
+2026-05-16 22:38:31 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running RENDERING_VIDEO
+2026-05-16 22:38:40 | INFO     | [engine.workers.render_video] 🎬 Preparing Remotion render for 'Golden'...
+2026-05-16 22:38:40 | INFO     | [engine.workers.render_video] 🔥 Starting Remotion render engine...
+2026-05-16 22:40:23 | INFO     | [engine.workers.render_video] ✅ Video rendered: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\final_video.mp4
+2026-05-16 22:40:25 | INFO     | [__main__] ✅ ASSETS_READY → PREVIEW_PENDING  ('Golden')
+2026-05-16 22:50:32 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 22:50:32 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 22:50:33 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 22:50:44 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 22:50:44 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 22:52:42 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 22:52:42 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 22:52:43 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 22:52:50 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 22:52:50 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 22:52:50 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 22:53:14 | INFO     | [__main__] ▶️  [sOnqjkJT] Thriller  →  running DOWNLOADING_AUDIO
+2026-05-16 22:53:23 | INFO     | [engine.workers.fetch_audio] ⬇️  Downloading audio for 'Thriller' from https://www.youtube.com/watch?v=sOnqjkJTMaA
+2026-05-16 22:53:53 | INFO     | [engine.workers.fetch_audio] ✅ Audio saved: D:\Hello World\Automations\EchoForge V3\workspaces\sOnqjkJTMaA\audio.mp3
+2026-05-16 22:53:56 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Thriller')
+2026-05-16 22:53:56 | INFO     | [__main__] ▶️  [sOnqjkJT] Thriller  →  running FETCHING_LYRICS
+2026-05-16 22:54:06 | INFO     | [engine.workers.fetch_lyrics] 📝 Searching for lyrics: 'Thriller Michael Jackson'
+2026-05-16 22:54:27 | INFO     | [engine.workers.fetch_lyrics] ✅ Synced lyrics saved: D:\Hello World\Automations\EchoForge V3\workspaces\sOnqjkJTMaA\lyrics.lrc
+2026-05-16 22:54:28 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Thriller')
+2026-05-16 23:03:08 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 23:03:08 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 23:03:09 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 23:03:18 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 23:03:18 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 23:03:24 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 23:06:29 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 23:06:29 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 23:06:30 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 23:06:37 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 23:06:37 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 23:06:38 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 23:08:14 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running DOWNLOADING_AUDIO
+2026-05-16 23:08:24 | INFO     | [engine.workers.fetch_audio] ✅ audio.mp3 already exists — skipping download.
+2026-05-16 23:08:26 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Choosin' Texas')
+2026-05-16 23:08:26 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running FETCHING_LYRICS
+2026-05-16 23:08:35 | INFO     | [engine.workers.fetch_lyrics] ✅ Lyrics already in workspace — skipping fetch.
+2026-05-16 23:08:36 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Choosin' Texas')
+2026-05-16 23:09:21 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running RUNNING_AI_SYNC
+2026-05-16 23:09:31 | INFO     | [engine.workers.ai_sync] ✅ timestamps.json already exists — skipping AI sync.
+2026-05-16 23:09:33 | INFO     | [__main__] ✅ LYRICS_APPROVED → ASSETS_READY  ('Choosin' Texas')
+2026-05-16 23:09:33 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running RENDERING_VIDEO
+2026-05-16 23:09:40 | INFO     | [engine.workers.render_video] ✅ Video already rendered — skipping.
+2026-05-16 23:09:42 | INFO     | [__main__] ✅ ASSETS_READY → PREVIEW_PENDING  ('Choosin' Texas')
+2026-05-16 23:16:13 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-16 23:16:13 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 23:16:14 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-16 23:16:27 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-16 23:16:27 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 23:17:13 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 23:17:26 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running DOWNLOADING_AUDIO
+2026-05-16 23:17:33 | INFO     | [engine.workers.fetch_audio] ⬇️  Downloading audio for 'Choosin' Texas' from https://www.youtube.com/watch?v=hLOheGDwD_0
+2026-05-16 23:17:39 | INFO     | [engine.workers.fetch_audio] ✅ Audio saved: D:\Hello World\Automations\EchoForge V3\workspaces\nUsrYVxrDwI\audio.mp3
+2026-05-16 23:17:41 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Choosin' Texas')
+2026-05-16 23:17:41 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running FETCHING_LYRICS
+2026-05-16 23:17:49 | INFO     | [engine.workers.fetch_lyrics] 📝 Searching for lyrics: 'Choosin' Texas Ella Langley'
+2026-05-16 23:17:52 | INFO     | [engine.workers.fetch_lyrics] ✅ Synced lyrics saved: D:\Hello World\Automations\EchoForge V3\workspaces\nUsrYVxrDwI\lyrics.lrc
+2026-05-16 23:17:54 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Choosin' Texas')
+2026-05-16 23:19:16 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running RUNNING_AI_SYNC
+2026-05-16 23:19:24 | INFO     | [engine.workers.ai_sync] ⏩ Pre-synced LRC found — fast path (no Demucs/Whisper).
+2026-05-16 23:19:24 | INFO     | [engine.workers.ai_sync] ⚡ Processing pre-synced LRC: D:\Hello World\Automations\EchoForge V3\workspaces\nUsrYVxrDwI\lyrics.lrc
+2026-05-16 23:19:24 | INFO     | [engine.workers.ai_sync] ✅ LRC → timestamps.json (41 segments)
+2026-05-16 23:19:25 | INFO     | [__main__] ✅ LYRICS_APPROVED → ASSETS_READY  ('Choosin' Texas')
+2026-05-16 23:19:25 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running RENDERING_VIDEO
+2026-05-16 23:19:32 | INFO     | [engine.workers.render_video] 🎬 Preparing Remotion render for 'Choosin' Texas'...
+2026-05-16 23:19:32 | INFO     | [engine.workers.render_video] 🔥 Starting Remotion render engine...
+2026-05-16 23:21:24 | INFO     | [engine.workers.render_video] ✅ Video rendered: D:\Hello World\Automations\EchoForge V3\workspaces\nUsrYVxrDwI\final_video.mp4
+2026-05-16 23:21:25 | INFO     | [__main__] ✅ ASSETS_READY → PREVIEW_PENDING  ('Choosin' Texas')
+2026-05-16 23:25:00 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running UPLOADING_TO_YOUTUBE
+2026-05-16 23:25:14 | INFO     | [engine.workers.youtube_upload] 🔄 Refreshing YouTube token...
+2026-05-16 23:25:15 | INFO     | [engine.workers.youtube_upload] ✅ Token saved: D:\Hello World\Automations\EchoForge V3\database\token.json
+2026-05-16 23:25:15 | INFO     | [engine.workers.youtube_upload] 📡 Uploading 'Choosin' Texas - Ella Langley (Lyric Video)' to YouTube [private]...
+2026-05-16 23:25:23 | INFO     | [engine.workers.youtube_upload] 🎉 Upload complete: https://www.youtube.com/watch?v=44SNP_oBau0
+2026-05-16 23:25:25 | INFO     | [__main__] ✅ VIDEO_APPROVED → PUBLISHED  ('Choosin' Texas')
+2026-05-16 23:49:46 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running DOWNLOADING_AUDIO
+2026-05-16 23:50:00 | INFO     | [engine.workers.fetch_audio] ⬇️  Downloading audio for 'Golden' from https://www.youtube.com/watch?v=9_bTl2vvYQg
+2026-05-16 23:50:06 | INFO     | [engine.workers.fetch_audio] ✅ Audio saved: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\audio.mp3
+2026-05-16 23:50:07 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Golden')
+2026-05-16 23:50:07 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running FETCHING_LYRICS
+2026-05-16 23:50:16 | INFO     | [engine.workers.fetch_lyrics] 📝 Searching for lyrics: 'Golden HUNTR/X, EJAE, AUDREY NUNA, REI AMI, KPop Demon Hunters Cast'
+2026-05-16 23:50:19 | INFO     | [engine.workers.fetch_lyrics] ✅ Synced lyrics saved: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\lyrics.lrc
+2026-05-16 23:50:21 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Golden')
+2026-05-16 23:52:15 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-16 23:52:25 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running RUNNING_AI_SYNC
+2026-05-16 23:52:34 | INFO     | [engine.workers.ai_sync] ⏩ Pre-synced LRC found — fast path (no Demucs/Whisper).
+2026-05-16 23:52:34 | INFO     | [engine.workers.ai_sync] ⚡ Processing pre-synced LRC: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\lyrics.lrc
+2026-05-16 23:52:34 | INFO     | [engine.workers.ai_sync] ✅ LRC → timestamps.json (51 segments)
+2026-05-16 23:52:36 | INFO     | [__main__] ✅ LYRICS_APPROVED → ASSETS_READY  ('Golden')
+2026-05-16 23:52:36 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running RENDERING_VIDEO
+2026-05-16 23:52:45 | INFO     | [engine.workers.render_video] 🎬 Preparing Remotion render for 'Golden'...
+2026-05-16 23:52:45 | INFO     | [engine.workers.render_video] 🔥 Starting Remotion render engine...
+2026-05-16 23:59:00 | INFO     | [engine.workers.render_video] ✅ Video rendered: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\final_video.mp4
+2026-05-16 23:59:03 | INFO     | [__main__] ✅ ASSETS_READY → PREVIEW_PENDING  ('Golden')
+2026-05-17 00:07:30 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-17 00:07:30 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-17 00:07:30 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-17 00:07:41 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-17 00:07:52 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-17 00:07:52 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-17 00:08:00 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running DOWNLOADING_AUDIO
+2026-05-17 00:08:07 | INFO     | [engine.workers.fetch_audio] ✅ audio.mp3 already exists — skipping download.
+2026-05-17 00:08:09 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Choosin' Texas')
+2026-05-17 00:08:09 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running FETCHING_LYRICS
+2026-05-17 00:08:17 | INFO     | [engine.workers.fetch_lyrics] ✅ Lyrics already in workspace — skipping fetch.
+2026-05-17 00:08:19 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Choosin' Texas')
+2026-05-17 00:08:35 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running RUNNING_AI_SYNC
+2026-05-17 00:08:44 | INFO     | [engine.workers.ai_sync] ✅ timestamps.json already exists — skipping AI sync.
+2026-05-17 00:08:46 | INFO     | [__main__] ✅ LYRICS_APPROVED → ASSETS_READY  ('Choosin' Texas')
+2026-05-17 00:08:46 | INFO     | [__main__] ▶️  [nUsrYVxr] Choosin' Texas  →  running RENDERING_VIDEO
+2026-05-17 00:08:56 | INFO     | [engine.workers.render_video] ✅ Video already rendered — skipping.
+2026-05-17 00:08:57 | INFO     | [__main__] ✅ ASSETS_READY → PREVIEW_PENDING  ('Choosin' Texas')
+2026-05-17 00:10:27 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-17 00:10:42 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running DOWNLOADING_AUDIO
+2026-05-17 00:10:51 | INFO     | [engine.workers.fetch_audio] ⬇️  Downloading audio for 'Golden' from https://www.youtube.com/watch?v=9_bTl2vvYQg
+2026-05-17 00:10:57 | INFO     | [engine.workers.fetch_audio] ✅ Audio saved: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\audio.mp3
+2026-05-17 00:10:59 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Golden')
+2026-05-17 00:10:59 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running FETCHING_LYRICS
+2026-05-17 00:11:09 | INFO     | [engine.workers.fetch_lyrics] 📝 Searching for lyrics: 'Golden HUNTR/X, EJAE, AUDREY NUNA, REI AMI, KPop Demon Hunters Cast'
+2026-05-17 00:11:12 | INFO     | [engine.workers.fetch_lyrics] ✅ Synced lyrics saved: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\lyrics.lrc
+2026-05-17 00:11:13 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Golden')
+2026-05-17 00:11:21 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running RUNNING_AI_SYNC
+2026-05-17 00:11:31 | INFO     | [engine.workers.ai_sync] ⏩ Pre-synced LRC found — fast path (no Demucs/Whisper).
+2026-05-17 00:11:31 | INFO     | [engine.workers.ai_sync] ⚡ Processing pre-synced LRC: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\lyrics.lrc
+2026-05-17 00:11:31 | INFO     | [engine.workers.ai_sync] ✅ LRC → timestamps.json (51 segments)
+2026-05-17 00:11:32 | INFO     | [__main__] ✅ LYRICS_APPROVED → ASSETS_READY  ('Golden')
+2026-05-17 00:11:33 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running RENDERING_VIDEO
+2026-05-17 00:11:41 | INFO     | [engine.workers.render_video] 🎬 Preparing Remotion render for 'Golden'...
+2026-05-17 00:11:41 | INFO     | [engine.workers.render_video] 🔥 Starting Remotion render engine...
+2026-05-17 00:17:36 | INFO     | [engine.workers.render_video] ✅ Video rendered: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\final_video.mp4
+2026-05-17 00:17:38 | INFO     | [__main__] ✅ ASSETS_READY → PREVIEW_PENDING  ('Golden')
+2026-05-17 00:25:13 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-17 00:25:13 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-17 00:25:14 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>
+2026-05-17 00:25:18 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-17 00:25:22 | INFO     | [__main__] ⚙️  Orchestrator Daemon started — watching DB for jobs...
+2026-05-17 00:25:22 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-17 00:26:04 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running DOWNLOADING_AUDIO
+2026-05-17 00:26:11 | INFO     | [engine.workers.fetch_audio] ⬇️  Downloading audio for 'Golden' from https://www.youtube.com/watch?v=9_bTl2vvYQg
+2026-05-17 00:26:14 | ERROR    | [engine.workers.fetch_audio] ❌ Download error: ERROR: [youtube] 9_bTl2vvYQg: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+2026-05-17 00:26:16 | ERROR    | [__main__] ❌ Worker crashed during DOWNLOADING_AUDIO for 'Golden' (exit code 1).
+2026-05-17 00:26:50 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running DOWNLOADING_AUDIO
+2026-05-17 00:26:58 | INFO     | [engine.workers.fetch_audio] ⬇️  Downloading audio for 'Golden' from https://www.youtube.com/watch?v=9_bTl2vvYQg
+2026-05-17 00:27:03 | INFO     | [engine.workers.fetch_audio] ✅ Audio saved: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\audio.mp3
+2026-05-17 00:27:05 | INFO     | [__main__] ✅ STAGED → AUDIO_FETCHED  ('Golden')
+2026-05-17 00:27:05 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running FETCHING_LYRICS
+2026-05-17 00:27:13 | INFO     | [engine.workers.fetch_lyrics] 📝 Searching for lyrics: 'Golden HUNTR/X, EJAE, AUDREY NUNA, REI AMI, KPop Demon Hunters Cast'
+2026-05-17 00:27:16 | INFO     | [engine.workers.fetch_lyrics] ✅ Synced lyrics saved: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\lyrics.lrc
+2026-05-17 00:27:18 | INFO     | [__main__] ✅ AUDIO_FETCHED → LYRICS_REVIEW_PENDING  ('Golden')
+2026-05-17 00:28:19 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running RUNNING_AI_SYNC
+2026-05-17 00:28:27 | INFO     | [engine.workers.ai_sync] ⏩ Pre-synced LRC found — fast path (no Demucs/Whisper).
+2026-05-17 00:28:27 | INFO     | [engine.workers.ai_sync] ⚡ Processing pre-synced LRC: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\lyrics.lrc
+2026-05-17 00:28:27 | INFO     | [engine.workers.ai_sync] ✅ LRC → timestamps.json (51 segments)
+2026-05-17 00:28:29 | INFO     | [__main__] ✅ LYRICS_APPROVED → ASSETS_READY  ('Golden')
+2026-05-17 00:28:29 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running RENDERING_VIDEO
+2026-05-17 00:28:36 | INFO     | [engine.workers.render_video] 🎬 Preparing Remotion render for 'Golden'...
+2026-05-17 00:28:36 | INFO     | [engine.workers.render_video] 🔥 Starting Remotion render engine...
+2026-05-17 00:34:27 | INFO     | [engine.workers.render_video] ✅ Video rendered: D:\Hello World\Automations\EchoForge V3\workspaces\9_bTl2vvYQg\final_video.mp4
+2026-05-17 00:34:29 | INFO     | [__main__] ✅ ASSETS_READY → PREVIEW_PENDING  ('Golden')
+2026-05-17 00:36:11 | INFO     | [__main__] ▶️  [9_bTl2vv] Golden  →  running UPLOADING_TO_YOUTUBE
+2026-05-17 00:36:19 | INFO     | [engine.workers.youtube_upload] 🔄 Refreshing YouTube token...
+2026-05-17 00:36:20 | INFO     | [engine.workers.youtube_upload] ✅ Token saved: D:\Hello World\Automations\EchoForge V3\database\token.json
+2026-05-17 00:36:21 | INFO     | [engine.workers.youtube_upload] 📡 Uploading 'Golden - HUNTR/X, EJAE, AUDREY NUNA, REI AMI, KPop Demon Hunters Cast (Lyric Video)' to YouTube [private]...
+2026-05-17 00:36:34 | INFO     | [engine.workers.youtube_upload] 🎉 Upload complete: https://www.youtube.com/watch?v=NoAoAOJtOsw
+2026-05-17 00:36:36 | INFO     | [__main__] ✅ VIDEO_APPROVED → PUBLISHED  ('Golden')
+2026-05-17 00:42:54 | INFO     | [__main__] 🤖 EchoForge Telegram Dashboard booting...
+2026-05-17 00:42:54 | INFO     | [database.db_manager] 🗄️  Database initialised (WAL mode).
+2026-05-17 00:42:54 | INFO     | [__main__] ✅ Bot online. Commands: /start <password>

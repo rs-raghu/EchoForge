@@ -1,14 +1,45 @@
-# API Keys and Secrets (CRITICAL)
+--- EchoForge Specific ---
+
 .env
-scripts/client_secrets.json
-scripts/token.json
+client_secrets.json
+workspaces/
+logs/*.log
+database/*.db
+database/*.db-*
+database/token.json
+remotion/current_props.json
+remotion/public/audio.mp3
+remotion/public/timestamps.json
+remotion/out/
 
-# Project Data & Outputs
-Assets/
-Output/
-Database/
-Logs/
+--- Python ---
 
-# Python Auto-Generated Files
-__pycache__/
-*.pyc
+pycache/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+--- Node / Remotion ---
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+.remotion/
+
+--- OS Specific ---
+
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+desktop.ini
+
+--- VS Code ---
+
+.vscode/
+*.code-workspace
+>>>>>>> master
