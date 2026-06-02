@@ -1,5 +1,4 @@
---- EchoForge Specific ---
-
+# EchoForge local state
 .env
 client_secrets.json
 workspaces/
@@ -7,22 +6,22 @@ logs/*.log
 database/*.db
 database/*.db-*
 database/token.json
-remotion/current_props.json
-remotion/public/audio.mp3
-remotion/public/timestamps.json
-remotion/out/
 
---- Python ---
+# Remotion runtime output
+renderer/remotion/current_props.json
+renderer/remotion/public/audio.mp3
+renderer/remotion/public/timestamps.json
+renderer/remotion/out/
 
-pycache/
+# Python
+__pycache__/
 *.py[cod]
 *$py.class
 .venv/
 venv/
 ENV/
 
---- Node / Remotion ---
-
+# Node
 node_modules/
 npm-debug.log*
 yarn-debug.log*
@@ -30,16 +29,10 @@ yarn-error.log*
 .eslintcache
 .remotion/
 
---- OS Specific ---
-
+# OS and editor
 .DS_Store
-.DS_Store?
 ._*
 Thumbs.db
 desktop.ini
-
---- VS Code ---
-
 .vscode/
 *.code-workspace
->>>>>>> master
