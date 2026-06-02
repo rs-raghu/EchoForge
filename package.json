@@ -1,14 +1,9 @@
 {
-  "name": "echoforge-web-studio",
+  "name": "echoforge-v3-tools",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "web:build": "node scripts/build-web-studio.mjs",
     "web:watch": "node scripts/build-web-studio.mjs --watch"
-  },
-  "dependencies": {
-    "@remotion/google-fonts": "^4.0.431",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4"
   }
 }

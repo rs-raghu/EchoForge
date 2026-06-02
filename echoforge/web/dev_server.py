@@ -47,6 +47,22 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
                 limit = int(query.get("limit", ["100"])[0])
                 state = query.get("state", [None])[0]
                 self._json(service.list_projects(limit=limit, state=state))
+            elif path == "/api/templates":
+                self._json(service.list_templates())
+            elif path == "/api/settings":
+                self._json(service.get_app_settings())
+            elif path == "/api/jobs":
+                project_id = query.get("project_id", [None])[0]
+                limit = int(query.get("limit", ["80"])[0])
+                self._json(service.list_jobs(project_id=project_id, limit=limit))
+            elif path.startswith("/api/jobs/"):
+                job_id = int(path.split("/")[3])
+                self._json(service.get_job(job_id))
+            elif path.startswith("/api/projects/") and "/media/" in path:
+                parts = path.split("/")
+                project_id = unquote(parts[3])
+                kind = unquote(parts[5])
+                self._file(service.project_media_path(project_id, kind))
             elif path.startswith("/api/projects/") and path.endswith("/files"):
                 project_id = unquote(path.split("/")[3])
                 self._json(service.list_project_files(project_id))
@@ -56,6 +72,21 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
             elif path.startswith("/api/projects/") and path.endswith("/lyrics"):
                 project_id = unquote(path.split("/")[3])
                 self._json(service.get_lyrics(project_id))
+            elif path.startswith("/api/projects/") and path.endswith("/timestamps/versions"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.list_timestamp_versions(project_id))
+            elif path.startswith("/api/projects/") and path.endswith("/timestamps"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.get_timestamps(project_id))
+            elif path.startswith("/api/projects/") and path.endswith("/design"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.get_project_design(project_id))
+            elif path.startswith("/api/projects/") and path.endswith("/render-readiness"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.render_readiness(project_id))
+            elif path.startswith("/api/projects/") and path.endswith("/upload/metadata"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.get_upload_metadata(project_id))
             elif path.startswith("/api/projects/"):
                 project_id = unquote(path.split("/")[3])
                 self._json(service.get_project(project_id))
@@ -67,6 +98,8 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
                 self._static(path)
         except KeyError:
             self._error(HTTPStatus.NOT_FOUND, "Project not found")
+        except (FileNotFoundError, ValueError):
+            self._error(HTTPStatus.NOT_FOUND, "Media file not found")
         except Exception as exc:
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
 
@@ -99,6 +132,29 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
             elif path.startswith("/api/projects/") and path.endswith("/lyrics/approve"):
                 project_id = unquote(path.split("/")[3])
                 self._json(service.approve_lyrics(project_id, payload))
+            elif path.startswith("/api/projects/") and path.endswith("/timestamps/validate"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.validate_timestamps(project_id, payload))
+            elif path.startswith("/api/projects/") and path.endswith("/timestamps/shift"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.shift_timestamps(project_id, payload))
+            elif path.startswith("/api/projects/") and path.endswith("/timestamps/approve"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.approve_timestamps(project_id, payload))
+            elif path.startswith("/api/projects/") and "/jobs/" in path:
+                parts = path.split("/")
+                project_id = unquote(parts[3])
+                job_type = unquote(parts[5])
+                self._json(service.start_project_job(project_id, job_type, payload))
+            elif path.startswith("/api/projects/") and path.endswith("/upload/metadata/generate"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.generate_upload_metadata(project_id))
+            elif path.startswith("/api/projects/") and path.endswith("/upload/approve"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.approve_upload(project_id, payload))
+            elif path.startswith("/api/jobs/") and path.endswith("/cancel"):
+                job_id = int(path.split("/")[3])
+                self._json(service.cancel_job(job_id))
             else:
                 self._error(HTTPStatus.NOT_FOUND, "Route not found")
         except KeyError:
@@ -119,6 +175,18 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
                 project_id = unquote(path.split("/")[3])
                 draft = query.get("draft", ["false"])[0].lower() in {"1", "true", "yes"}
                 self._json(service.save_lyrics(project_id, payload, draft=draft))
+            elif path.startswith("/api/projects/") and path.endswith("/timestamps"):
+                project_id = unquote(path.split("/")[3])
+                draft = query.get("draft", ["false"])[0].lower() in {"1", "true", "yes"}
+                self._json(service.save_timestamps(project_id, payload, draft=draft))
+            elif path.startswith("/api/projects/") and path.endswith("/design"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.save_project_design(project_id, payload))
+            elif path.startswith("/api/projects/") and path.endswith("/upload/metadata"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.save_upload_metadata(project_id, payload))
+            elif path == "/api/settings":
+                self._json(service.save_app_settings(payload))
             else:
                 self._error(HTTPStatus.NOT_FOUND, "Route not found")
         except KeyError:
@@ -150,6 +218,15 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
 
     def _error(self, status: HTTPStatus, message: str) -> None:
         self._json({"error": message}, status=status)
+
+    def _file(self, path: Path) -> None:
+        content = path.read_bytes()
+        mime_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        self.send_response(HTTPStatus.OK.value)
+        self.send_header("content-type", mime_type)
+        self.send_header("content-length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
 
     def _static(self, request_path: str) -> None:
         if request_path in {"", "/"}:

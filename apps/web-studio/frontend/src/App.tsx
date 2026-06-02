@@ -9,7 +9,12 @@ import {
   runProjectAction,
   stageNextProject,
 } from "./api";
-import { LyricsEditor } from "./LyricsEditor";
+import { LyricsEditor } from "./editors/LyricsEditor";
+import { SyncEditor } from "./editors/SyncEditor";
+import { RenderQueueView } from "./views/RenderQueueView";
+import { SettingsView } from "./views/SettingsView";
+import { TemplatesView } from "./views/TemplatesView";
+import { UploadManagerView } from "./views/UploadManagerView";
 import type { DashboardPayload, LogItem, ProjectDetail, ProjectSummary, SummaryCard } from "./types";
 
 type ViewKey =
@@ -18,6 +23,7 @@ type ViewKey =
   | "queue"
   | "projects"
   | "lyrics"
+  | "sync"
   | "templates"
   | "render"
   | "upload"
@@ -30,6 +36,7 @@ const navItems: Array<{ key: ViewKey; label: string }> = [
   { key: "queue", label: "Queue" },
   { key: "projects", label: "Projects" },
   { key: "lyrics", label: "Lyrics" },
+  { key: "sync", label: "Sync" },
   { key: "templates", label: "Templates" },
   { key: "render", label: "Render Queue" },
   { key: "upload", label: "Upload Manager" },
@@ -41,6 +48,7 @@ const primaryLabels: Record<string, string> = {
   stage: "Stage",
   run_full: "Run Full",
   approve_lyrics: "Approve Lyrics",
+  approve_sync: "Approve Sync",
   continue_video: "Continue",
   approve_video: "Approve Upload",
   retry: "Retry",
@@ -147,6 +155,16 @@ export function App() {
     }
   }
 
+  async function openSync(projectId: string) {
+    setSelectedId(projectId);
+    setView("sync");
+    try {
+      setSelected(await fetchProject(projectId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Project could not be opened");
+    }
+  }
+
   return (
     <div className="studio-shell">
       <aside className="sidebar">
@@ -204,6 +222,7 @@ export function App() {
             onAction={executeAction}
             onOpen={openProject}
             onOpenLyrics={openLyrics}
+            onOpenSync={openSync}
             onStageNext={stageNext}
             onSwitchView={setView}
           />
@@ -216,6 +235,7 @@ export function App() {
             onAction={executeAction}
             onOpen={openProject}
             onOpenLyrics={openLyrics}
+            onOpenSync={openSync}
             onStageNext={stageNext}
           />
         ) : null}
@@ -228,6 +248,8 @@ export function App() {
             mode={mode}
             onOpen={openProject}
             onOpenLyrics={openLyrics}
+            onOpenSync={openSync}
+            onSwitchView={setView}
             onAction={executeAction}
             onCreated={async (project) => {
               setSelectedId(project.id);
@@ -250,8 +272,56 @@ export function App() {
             }}
           />
         ) : null}
+        {view === "sync" ? (
+          <SyncEditor
+            project={selected}
+            setError={setError}
+            onProjectChanged={async () => {
+              await refresh();
+              if (selectedId) {
+                setSelected(await fetchProject(selectedId));
+              }
+            }}
+          />
+        ) : null}
+        {view === "templates" ? (
+          <TemplatesView
+            project={selected}
+            setError={setError}
+            onProjectChanged={async () => {
+              await refresh();
+              if (selectedId) {
+                setSelected(await fetchProject(selectedId));
+              }
+            }}
+          />
+        ) : null}
+        {view === "render" ? (
+          <RenderQueueView
+            project={selected}
+            setError={setError}
+            onProjectChanged={async () => {
+              await refresh();
+              if (selectedId) {
+                setSelected(await fetchProject(selectedId));
+              }
+            }}
+          />
+        ) : null}
+        {view === "upload" ? (
+          <UploadManagerView
+            project={selected}
+            setError={setError}
+            onProjectChanged={async () => {
+              await refresh();
+              if (selectedId) {
+                setSelected(await fetchProject(selectedId));
+              }
+            }}
+          />
+        ) : null}
+        {view === "settings" ? <SettingsView setError={setError} /> : null}
         {view === "logs" ? <LogsView logs={logs} /> : null}
-        {["templates", "render", "upload", "settings"].includes(view) ? <FuturePanel view={view} /> : null}
       </main>
     </div>
   );
@@ -264,6 +334,7 @@ function DashboardView({
   onAction,
   onOpen,
   onOpenLyrics,
+  onOpenSync,
   onStageNext,
   onSwitchView,
 }: {
@@ -273,6 +344,7 @@ function DashboardView({
   onAction: (project: ProjectSummary, action: string, target?: string) => Promise<void>;
   onOpen: (projectId: string) => Promise<void>;
   onOpenLyrics: (projectId: string) => Promise<void>;
+  onOpenSync: (projectId: string) => Promise<void>;
   onStageNext: () => Promise<void>;
   onSwitchView: (view: ViewKey) => void;
 }) {
@@ -316,6 +388,7 @@ function DashboardView({
                   onAction={onAction}
                   onOpen={onOpen}
                   onOpenLyrics={onOpenLyrics}
+                  onOpenSync={onOpenSync}
                 />
               ))}
             </div>
@@ -412,6 +485,7 @@ function QueueView({
   onAction,
   onOpen,
   onOpenLyrics,
+  onOpenSync,
   onStageNext,
 }: {
   dashboard: DashboardPayload | null;
@@ -419,6 +493,7 @@ function QueueView({
   onAction: (project: ProjectSummary, action: string, target?: string) => Promise<void>;
   onOpen: (projectId: string) => Promise<void>;
   onOpenLyrics: (projectId: string) => Promise<void>;
+  onOpenSync: (projectId: string) => Promise<void>;
   onStageNext: () => Promise<void>;
 }) {
   const queue = dashboard?.queue ?? [];
@@ -442,6 +517,7 @@ function QueueView({
                 onAction={onAction}
                 onOpen={onOpen}
                 onOpenLyrics={onOpenLyrics}
+                onOpenSync={onOpenSync}
               />
             ))}
           </div>
@@ -459,6 +535,8 @@ function ProjectsView({
   mode,
   onOpen,
   onOpenLyrics,
+  onOpenSync,
+  onSwitchView,
   onAction,
   onCreated,
   setBusyKey,
@@ -471,6 +549,8 @@ function ProjectsView({
   mode: "simple" | "advanced";
   onOpen: (projectId: string) => Promise<void>;
   onOpenLyrics: (projectId: string) => Promise<void>;
+  onOpenSync: (projectId: string) => Promise<void>;
+  onSwitchView: (view: ViewKey) => void;
   onAction: (project: ProjectSummary, action: string, target?: string) => Promise<void>;
   onCreated: (project: ProjectDetail) => Promise<void>;
   setBusyKey: (key: string | null) => void;
@@ -497,7 +577,15 @@ function ProjectsView({
           ))}
         </div>
       </Panel>
-      <ProjectDetailPanel busyKey={busyKey} mode={mode} project={selected} onAction={onAction} onOpenLyrics={onOpenLyrics} />
+      <ProjectDetailPanel
+        busyKey={busyKey}
+        mode={mode}
+        project={selected}
+        onAction={onAction}
+        onOpenLyrics={onOpenLyrics}
+        onOpenSync={onOpenSync}
+        onSwitchView={onSwitchView}
+      />
     </section>
   );
 }
@@ -508,12 +596,16 @@ function ProjectDetailPanel({
   mode,
   onAction,
   onOpenLyrics,
+  onOpenSync,
+  onSwitchView,
 }: {
   project: ProjectDetail | null;
   busyKey: string | null;
   mode: "simple" | "advanced";
   onAction: (project: ProjectSummary, action: string, target?: string) => Promise<void>;
   onOpenLyrics: (projectId: string) => Promise<void>;
+  onOpenSync: (projectId: string) => Promise<void>;
+  onSwitchView: (view: ViewKey) => void;
 }) {
   if (!project) {
     return (
@@ -538,6 +630,26 @@ function ProjectDetailPanel({
           {project.filesReady.lyrics || project.rawState === "LYRICS_REVIEW_PENDING" ? (
             <button className="button primary" onClick={() => void onOpenLyrics(project.id)} type="button">
               Edit Lyrics
+            </button>
+          ) : null}
+          {project.filesReady.timestamps || project.filesReady.draftTimestamps || project.rawState === "ASSETS_READY" ? (
+            <button className="button primary" onClick={() => void onOpenSync(project.id)} type="button">
+              Open Sync
+            </button>
+          ) : null}
+          {project.filesReady.timestamps || project.rawState === "ASSETS_READY" || project.filesReady.design ? (
+            <button className="button" onClick={() => onSwitchView("templates")} type="button">
+              Design
+            </button>
+          ) : null}
+          {project.rawState === "ASSETS_READY" || project.rawState === "PREVIEW_PENDING" || project.filesReady.final ? (
+            <button className="button" onClick={() => onSwitchView("render")} type="button">
+              Render
+            </button>
+          ) : null}
+          {project.rawState === "PREVIEW_PENDING" || project.filesReady.final ? (
+            <button className="button" onClick={() => onSwitchView("upload")} type="button">
+              Upload
             </button>
           ) : null}
           {project.primaryAction ? (
@@ -670,29 +782,20 @@ function LogsView({ logs }: { logs: LogItem[] }) {
   );
 }
 
-function FuturePanel({ view }: { view: ViewKey }) {
-  const label = navItems.find((item) => item.key === view)?.label ?? "Studio";
-  return (
-    <section className="view-stack">
-      <Panel title={label}>
-        <EmptyState title="Queued for the next phase" />
-      </Panel>
-    </section>
-  );
-}
-
 function ProjectCard({
   project,
   busyKey,
   onAction,
   onOpen,
   onOpenLyrics,
+  onOpenSync,
 }: {
   project: ProjectSummary;
   busyKey: string | null;
   onAction: (project: ProjectSummary, action: string, target?: string) => Promise<void>;
   onOpen: (projectId: string) => Promise<void>;
   onOpenLyrics: (projectId: string) => Promise<void>;
+  onOpenSync: (projectId: string) => Promise<void>;
 }) {
   return (
     <article className="project-card">
@@ -719,6 +822,11 @@ function ProjectCard({
             {project.primaryAction === "approve_lyrics" ? "Open Lyrics" : primaryLabels[project.primaryAction] ?? project.nextAction}
           </button>
         ) : null}
+        {project.filesReady.timestamps || project.filesReady.draftTimestamps ? (
+          <button className="button small" onClick={() => void onOpenSync(project.id)} type="button">
+            Sync
+          </button>
+        ) : null}
         <button className="button small" onClick={() => void onOpen(project.id)} type="button">
           Open
         </button>
@@ -733,12 +841,14 @@ function ProjectRow({
   onAction,
   onOpen,
   onOpenLyrics,
+  onOpenSync,
 }: {
   project: ProjectSummary;
   busyKey: string | null;
   onAction: (project: ProjectSummary, action: string, target?: string) => Promise<void>;
   onOpen: (projectId: string) => Promise<void>;
   onOpenLyrics: (projectId: string) => Promise<void>;
+  onOpenSync: (projectId: string) => Promise<void>;
 }) {
   return (
     <div className="table-row">
@@ -761,6 +871,11 @@ function ProjectRow({
             type="button"
           >
             {project.primaryAction === "approve_lyrics" ? "Open Lyrics" : primaryLabels[project.primaryAction] ?? project.nextAction}
+          </button>
+        ) : null}
+        {project.filesReady.timestamps || project.filesReady.draftTimestamps ? (
+          <button className="button small" onClick={() => void onOpenSync(project.id)} type="button">
+            Sync
           </button>
         ) : null}
         <button className="button small" onClick={() => void onOpen(project.id)} type="button">

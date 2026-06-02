@@ -31,6 +31,14 @@ PUBLIC_DIR   = os.path.join(REMOTION_DIR, "public")
 FPS = 30
 
 
+def _workspace_file(workspace_dir: str, *relative_paths: str) -> str | None:
+    for relative_path in relative_paths:
+        candidate = os.path.join(workspace_dir, relative_path)
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
 def _get_audio_duration_seconds(audio_path: str) -> float | None:
     try:
         result = subprocess.run(
@@ -63,7 +71,44 @@ def _get_timestamp_duration_seconds(ts_path: str) -> float | None:
     return None
 
 
-def render(song: dict) -> bool:
+def _load_render_props(workspace_dir: str, title: str, artist: str) -> dict:
+    props_path = os.path.join(workspace_dir, "design", "render_props.json")
+    props = {"title": title, "artist": artist, "design": {}}
+    if os.path.exists(props_path):
+        try:
+            with open(props_path, "r", encoding="utf-8") as fh:
+                saved = json.load(fh)
+            if isinstance(saved, dict):
+                props.update(saved)
+        except Exception as exc:
+            log.warning("Could not read render props: %s", exc)
+    props["title"] = props.get("title") or title
+    props["artist"] = props.get("artist") or artist
+    return props
+
+
+def _output_paths(workspace_dir: str, mode: str) -> tuple[str, str]:
+    if mode == "preview":
+        archive_dir = os.path.join(workspace_dir, "renders", "previews")
+        os.makedirs(archive_dir, exist_ok=True)
+        return (
+            os.path.join(workspace_dir, "final_video_preview.mp4"),
+            os.path.join(archive_dir, "preview_latest.mp4"),
+        )
+    archive_dir = os.path.join(workspace_dir, "renders", "final")
+    os.makedirs(archive_dir, exist_ok=True)
+    return (
+        os.path.join(workspace_dir, "final_video.mp4"),
+        os.path.join(archive_dir, "final_video.mp4"),
+    )
+
+
+def _copy_finished_output(output_video: str, archive_video: str) -> None:
+    if os.path.abspath(output_video) != os.path.abspath(archive_video):
+        shutil.copyfile(output_video, archive_video)
+
+
+def render(song: dict, mode: str = "final", preview_duration: float = 45) -> bool:
     """
     Render final_video.mp4 for *song* into workspace_dir.
     Returns True on success, False on any failure.
@@ -71,23 +116,24 @@ def render(song: dict) -> bool:
     workspace_dir = song.get("workspace_dir")
     title         = song.get("title", "Unknown")
     artist        = song.get("artist", "Unknown")
+    mode          = "preview" if mode == "preview" else "final"
 
     if not workspace_dir:
         log.error("❌ Missing workspace_dir.")
         return False
 
-    audio_path  = os.path.join(workspace_dir, "audio.mp3")
-    ts_path     = os.path.join(workspace_dir, "timestamps.json")
-    output_video = os.path.join(workspace_dir, "final_video.mp4")
+    audio_path  = _workspace_file(workspace_dir, "audio.mp3", "source/audio.mp3")
+    ts_path     = _workspace_file(workspace_dir, "timestamps.json", "sync/timestamps.json")
+    output_video, archive_video = _output_paths(workspace_dir, mode)
 
-    if os.path.exists(output_video):
+    if False and os.path.exists(output_video):
         log.info("✅ Video already rendered — skipping.")
         return True
 
-    if not os.path.exists(audio_path):
+    if not audio_path:
         log.error("❌ audio.mp3 missing from workspace.")
         return False
-    if not os.path.exists(ts_path):
+    if not ts_path:
         log.error("❌ timestamps.json missing from workspace.")
         return False
 
@@ -103,6 +149,8 @@ def render(song: dict) -> bool:
             or _get_timestamp_duration_seconds(ts_path)
             or 60
         )
+        if mode == "preview":
+            duration_seconds = max(8, min(duration_seconds, float(preview_duration or 45)))
         duration_in_frames = max(int((duration_seconds + 2) * FPS), FPS)
 
         os.makedirs(PUBLIC_DIR, exist_ok=True)
@@ -112,13 +160,15 @@ def render(song: dict) -> bool:
         shutil.copy(ts_path,    os.path.join(PUBLIC_DIR, "timestamps.json"))
 
         # Write props file
-        props = {
-            "title":         title,
-            "artist":        artist,
-            "audioUrl":      "audio.mp3",
-            "timestampsUrl": "timestamps.json",
-            "durationInFrames": duration_in_frames,
-        }
+        props = _load_render_props(workspace_dir, title, artist)
+        props.update(
+            {
+                "audioUrl": "audio.mp3",
+                "timestampsUrl": "timestamps.json",
+                "durationInFrames": duration_in_frames,
+                "renderMode": mode,
+            }
+        )
         props_file = os.path.join(REMOTION_DIR, "current_props.json")
         with open(props_file, "w", encoding="utf-8") as fh:
             json.dump(props, fh)
@@ -152,6 +202,7 @@ def render(song: dict) -> bool:
             pass
 
         if proc.returncode == 0 and os.path.exists(output_video):
+            _copy_finished_output(output_video, archive_video)
             log.info("✅ Video rendered: %s", output_video)
             return True
 
@@ -174,6 +225,8 @@ if __name__ == "__main__":
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--title",     default="Test Track")
     parser.add_argument("--artist",    default="Test Artist")
+    parser.add_argument("--mode", choices=["preview", "final"], default="final")
+    parser.add_argument("--preview-duration", type=float, default=45)
     args = parser.parse_args()
 
     song = {
@@ -181,6 +234,6 @@ if __name__ == "__main__":
         "artist":        args.artist,
         "workspace_dir": args.workspace,
     }
-    ok = render(song)
+    ok = render(song, mode=args.mode, preview_duration=args.preview_duration)
     print(f"\n{'✅ Success' if ok else '❌ Failed'}")
     sys.exit(0 if ok else 1)

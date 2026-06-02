@@ -19,6 +19,14 @@ export const RemotionRoot: React.FC = () => {
 
   // Fallback for duration (must be a number)
   const durationInFrames = (passedProps.durationInFrames as number) || 1800;
+  const design = (props.design ?? {}) as { aspectRatio?: string; fps?: number };
+  const fps = Number(design.fps || 30);
+  const dimensions =
+    design.aspectRatio === '9:16'
+      ? { width: 1080, height: 1920 }
+      : design.aspectRatio === '1:1'
+        ? { width: 1080, height: 1080 }
+        : { width: 1920, height: 1080 };
 
   return (
     <>
@@ -26,9 +34,9 @@ export const RemotionRoot: React.FC = () => {
         id="LyricVideo"
         component={LyricVideo as React.FC<any>}
         durationInFrames={durationInFrames}
-        fps={30}
-        width={1920}
-        height={1080}
+        fps={fps}
+        width={dimensions.width}
+        height={dimensions.height}
         defaultProps={props}
       />
     </>

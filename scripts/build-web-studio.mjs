@@ -9,7 +9,8 @@ const frontendDir = path.join(rootDir, "apps", "web-studio", "frontend");
 const distDir = path.join(frontendDir, "dist");
 const entryPoint = path.join(frontendDir, "src", "main.tsx");
 const indexHtml = path.join(frontendDir, "index.html");
-const esbuild = require(path.join(rootDir, "renderer", "remotion", "node_modules", "esbuild"));
+const remotionNodeModules = path.join(rootDir, "renderer", "remotion", "node_modules");
+const esbuild = require(path.join(remotionNodeModules, "esbuild"));
 const watch = process.argv.includes("--watch");
 
 function prepareDist() {
@@ -28,6 +29,7 @@ const buildOptions = {
   format: "esm",
   platform: "browser",
   target: ["es2020"],
+  nodePaths: [remotionNodeModules],
   sourcemap: false,
   minify: !watch,
   loader: {

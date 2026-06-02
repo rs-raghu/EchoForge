@@ -15,6 +15,7 @@ CLI USAGE:
 """
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -40,6 +41,54 @@ except ImportError:
 CLIENT_SECRETS = str(ROOT_DIR / "client_secrets.json")
 TOKEN_FILE     = str(ROOT_DIR / "database" / "token.json")
 SCOPES         = ["https://www.googleapis.com/auth/youtube.upload"]
+
+
+def _workspace_file(workspace_dir: str, *relative_paths: str) -> str | None:
+    for relative_path in relative_paths:
+        candidate = os.path.join(workspace_dir, relative_path)
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def _load_upload_metadata(workspace_dir: str, title: str, artist: str) -> dict:
+    default_title = f"{title} - {artist} (Lyric Video)"
+    metadata = {
+        "title": default_title[:100],
+        "description": (
+            f"Lyric video for {title} by {artist}.\n\n"
+            "Created with EchoForge Web Studio."
+        ),
+        "tags": ["lyrics", "lyric video", artist, title, "music"],
+        "privacy": "private",
+        "madeForKids": False,
+    }
+    metadata_path = os.path.join(workspace_dir, "upload", "metadata.json")
+    if os.path.exists(metadata_path):
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as fh:
+                saved = json.load(fh)
+            if isinstance(saved, dict):
+                metadata.update(saved)
+            log.info("Using upload metadata from %s", metadata_path)
+        except Exception as exc:
+            log.warning("Could not read upload metadata: %s", exc)
+
+    desc_path = os.path.join(workspace_dir, "description.txt")
+    if not metadata.get("description") and os.path.exists(desc_path):
+        with open(desc_path, "r", encoding="utf-8") as fh:
+            metadata["description"] = fh.read().strip()
+
+    if isinstance(metadata.get("tags"), str):
+        metadata["tags"] = [tag.strip() for tag in metadata["tags"].split(",") if tag.strip()]
+    if not isinstance(metadata.get("tags"), list):
+        metadata["tags"] = ["lyrics", "lyric video", "music"]
+    if metadata.get("privacy") not in {"private", "unlisted", "public"}:
+        metadata["privacy"] = "private"
+    metadata["title"] = str(metadata.get("title") or default_title)[:100]
+    metadata["description"] = str(metadata.get("description") or "")
+    metadata["madeForKids"] = bool(metadata.get("madeForKids", False))
+    return metadata
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -102,8 +151,8 @@ def upload(song: dict) -> bool:
         log.error("❌ Missing workspace_dir.")
         return False
 
-    video_path = os.path.join(workspace_dir, "final_video.mp4")
-    if not os.path.exists(video_path):
+    video_path = _workspace_file(workspace_dir, "final_video.mp4", "renders/final/final_video.mp4")
+    if not video_path:
         log.error("❌ final_video.mp4 not found at %s", video_path)
         return False
 
@@ -129,11 +178,15 @@ def upload(song: dict) -> bool:
             f"#{artist.replace(' ', '')} #{title.replace(' ', '')} #lyrics #lyricvideo"
         )
 
+    metadata = _load_upload_metadata(workspace_dir, title, artist)
+    yt_title = metadata["title"]
+    description = metadata["description"]
+
     body = {
         "snippet": {
             "title":       yt_title,
             "description": description,
-            "tags":        ["lyrics", "lyric video", artist, title, "music"],
+            "tags":        metadata["tags"],
             "categoryId":  "10",
         },
         "status": {
@@ -143,6 +196,9 @@ def upload(song: dict) -> bool:
     }
 
     log.info("📡 Uploading '%s' to YouTube [%s]...", yt_title, body["status"]["privacyStatus"])
+
+    body["status"]["privacyStatus"] = metadata["privacy"]
+    body["status"]["selfDeclaredMadeForKids"] = metadata["madeForKids"]
 
     try:
         media   = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
@@ -162,6 +218,10 @@ def upload(song: dict) -> bool:
 
         # Save the URL for reference
         with open(os.path.join(workspace_dir, "published_url.txt"), "w") as fh:
+            fh.write(yt_url)
+        upload_dir = os.path.join(workspace_dir, "upload")
+        os.makedirs(upload_dir, exist_ok=True)
+        with open(os.path.join(upload_dir, "published_url.txt"), "w") as fh:
             fh.write(yt_url)
 
         return True

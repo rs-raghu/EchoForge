@@ -19,6 +19,16 @@ export interface LyricVideoProps {
   artist: string;
   audioUrl: string;
   timestampsUrl: string;
+  renderMode?: 'preview' | 'final';
+  design?: {
+    backgroundColor?: string;
+    textColor?: string;
+    highlightColor?: string;
+    fontFamily?: string;
+    fontSize?: number;
+    textPosition?: 'top' | 'center' | 'bottom';
+    watermark?: boolean;
+  };
 }
 
 const useTimestamps = (url: string): { segments: Segment[] } | null => {
@@ -55,6 +65,7 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
   artist,
   audioUrl,
   timestampsUrl,
+  design = {},
 }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
@@ -64,6 +75,14 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
   const LOGO_DURATION_FRAMES = 2 * fps;
   const DETAILS_DURATION_FRAMES = 3 * fps;
   const LYRICS_START_FRAME = LOGO_DURATION_FRAMES + DETAILS_DURATION_FRAMES;
+  const backgroundColor = design.backgroundColor || '#111111';
+  const textColor = design.textColor || 'white';
+  const highlightColor = design.highlightColor || '#FFD700';
+  const fontFamily = design.fontFamily || 'sans-serif';
+  const fontSize = Number(design.fontSize || 74);
+  const lyricsJustify =
+    design.textPosition === 'top' ? 'flex-start' : design.textPosition === 'bottom' ? 'flex-end' : 'center';
+  const watermarkEnabled = design.watermark !== false;
 
   const logoOpacity = interpolate(
     frame,
@@ -110,7 +129,7 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
       const isWordPassed = frame > wordEndFrame;
 
       let color = 'inherit';
-      if (isWordActive) color = '#FFD700';
+      if (isWordActive) color = highlightColor;
       else if (isWordPassed) color = '#aaa';
 
       const needsSpace = !w.word.trim().endsWith('-');
@@ -125,12 +144,12 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
   };
 
   return (
-    <AbsoluteFill style={{ backgroundColor: '#111', color: 'white', fontFamily: 'sans-serif' }}>
+    <AbsoluteFill style={{ backgroundColor, color: textColor, fontFamily }}>
       {audioUrl ? <Audio src={staticFile(audioUrl)} /> : null}
 
       <Sequence from={0} durationInFrames={LOGO_DURATION_FRAMES}>
         <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', opacity: logoOpacity }}>
-          <div style={{ fontSize: 80, fontWeight: 'bold', color: '#FFD700' }}>
+          <div style={{ fontSize: 80, fontWeight: 'bold', color: highlightColor }}>
             EchoForge
           </div>
         </AbsoluteFill>
@@ -144,11 +163,11 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
       </Sequence>
 
       <Sequence from={LYRICS_START_FRAME} durationInFrames={durationInFrames - LYRICS_START_FRAME}>
-        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', padding: '0 12%' }}>
+        <AbsoluteFill style={{ justifyContent: lyricsJustify, alignItems: 'center', padding: '10% 12%' }}>
           <div style={{ width: '100%', minHeight: 120, textAlign: 'center' }}>
             
             {hasSegments ? (
-              <div style={{ fontSize: 74, fontWeight: 800, color: 'white', lineHeight: 1.18 }}>
+              <div style={{ fontSize, fontWeight: 800, color: textColor, lineHeight: 1.18 }}>
                 {activeSegment ? renderWords(activeSegment) : ''}
               </div>
             ) : (
@@ -160,6 +179,12 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
           </div>
         </AbsoluteFill>
       </Sequence>
+
+      {watermarkEnabled ? (
+        <div style={{ position: 'absolute', right: 36, bottom: 28, color: highlightColor, fontSize: 24, fontWeight: 700, opacity: 0.65 }}>
+          EchoForge
+        </div>
+      ) : null}
     </AbsoluteFill>
   );
 };
