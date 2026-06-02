@@ -8,7 +8,10 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
+import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +27,10 @@ _INIT_LOCK = threading.Lock()
 _INITIALIZED = False
 _JOB_LOCK = threading.Lock()
 _JOB_THREADS: dict[int, threading.Thread] = {}
+
+
+class _JobCancelled(RuntimeError):
+    pass
 
 DEFAULT_APP_SETTINGS = {
     "theme": "dark",
@@ -820,8 +827,10 @@ def render_readiness(project_id: str) -> dict[str, Any]:
         raise KeyError(project_id)
     workspace = _workspace_path(project_id, row["workspace_dir"])
     files = _workspace_flags(workspace)
-    sync = get_timestamps(project_id) if files["timestamps"] or files["draftTimestamps"] else {"warnings": []}
-    critical_sync_warnings = [warning for warning in sync["warnings"] if warning.get("severity") == "danger"]
+    active_segments = _active_timestamp_segments(workspace) if files["timestamps"] else []
+    critical_sync_warnings = [
+        warning for warning in _timestamp_warnings(active_segments) if warning.get("severity") == "danger"
+    ] if files["timestamps"] else []
     free_bytes = shutil.disk_usage(workspace if workspace.exists() else WORKSPACES_DIR).free
     checks = [
         {"key": "audio", "label": "Audio exists", "ok": files["audio"], "fix": "Run audio download"},
@@ -894,7 +903,7 @@ def _start_pipeline_job(project_id: str, target_state: str) -> dict[str, Any]:
         raise KeyError(project_id)
     target_state = "ASSETS_READY" if target_state == "ASSETS_READY" else "VIDEO_APPROVED"
     workspace = _ensure_workspace(project_id, row["workspace_dir"])
-    db_manager.set_target_state(project_id, target_state)
+    db_manager.set_target_state(project_id, row["current_macro_state"] or "STAGED")
     job_type = "assets_pipeline" if target_state == "ASSETS_READY" else "full_pipeline"
     job_id = _insert_job(
         project_id,
@@ -953,7 +962,7 @@ def project_media_path(project_id: str, kind: str) -> Path:
         if not candidate.exists() or not candidate.is_file():
             continue
         resolved = candidate.resolve()
-        if str(resolved).startswith(str(workspace_root)):
+        if _is_relative_to(resolved, workspace_root):
             return resolved
     raise FileNotFoundError(kind)
 
@@ -1364,6 +1373,14 @@ def _timestamps_active_path(workspace: Path) -> Path:
     return workspace / "timestamps.json"
 
 
+def _active_timestamp_segments(workspace: Path) -> list[dict[str, Any]]:
+    active_path = _timestamps_active_path(workspace)
+    if not active_path.exists():
+        return []
+    content = active_path.read_text(encoding="utf-8", errors="replace")
+    return _timestamp_segments_from_json(content) if content else []
+
+
 def _timestamps_draft_path(workspace: Path) -> Path:
     for name in ("timestamps.draft.json", "sync/timestamps.draft.json"):
         path = workspace / name
@@ -1742,14 +1759,14 @@ def _request_pipeline_state(project_id: str, row: sqlite3.Row, job_type: str, pa
                 micro="IDLE",
                 workspace_dir=str(_ensure_workspace(project_id, row["workspace_dir"])),
             )
-        db_manager.set_target_state(project_id, "AUDIO_FETCHED")
+        db_manager.set_target_state(project_id, "STAGED")
         return "Audio download requested"
 
     if job_type == "fetch_lyrics":
         if not files["audio"] and raw_state != "AUDIO_FETCHED":
             raise ValueError("Audio is required before lyrics can be fetched")
         db_manager.update_state(project_id, macro="AUDIO_FETCHED", micro="IDLE")
-        db_manager.set_target_state(project_id, "LYRICS_REVIEW_PENDING")
+        db_manager.set_target_state(project_id, "AUDIO_FETCHED")
         return "Lyrics fetch requested"
 
     if job_type == "auto_sync":
@@ -1761,7 +1778,7 @@ def _request_pipeline_state(project_id: str, row: sqlite3.Row, job_type: str, pa
             raise ValueError("Approve lyrics before auto-sync")
         if raw_state in {"FAILED", "PAUSED"}:
             db_manager.update_state(project_id, macro="LYRICS_APPROVED", micro="IDLE")
-        db_manager.set_target_state(project_id, "ASSETS_READY")
+        db_manager.set_target_state(project_id, "LYRICS_APPROVED")
         return "Auto-sync requested"
 
     if job_type in {"render_preview", "render_final"}:
@@ -1770,7 +1787,7 @@ def _request_pipeline_state(project_id: str, row: sqlite3.Row, job_type: str, pa
             missing = ", ".join(item["label"] for item in readiness["checks"] if not item["ok"])
             raise ValueError(f"Render blocked: {missing}")
         db_manager.update_state(project_id, macro="ASSETS_READY", micro="IDLE")
-        db_manager.set_target_state(project_id, "PREVIEW_PENDING")
+        db_manager.set_target_state(project_id, "ASSETS_READY")
         return "Render requested"
 
     if job_type == "upload_youtube":
@@ -1780,7 +1797,7 @@ def _request_pipeline_state(project_id: str, row: sqlite3.Row, job_type: str, pa
         if not files["final"]:
             raise ValueError("Final video is required before upload")
         db_manager.update_state(project_id, macro="VIDEO_APPROVED", micro="IDLE")
-        db_manager.set_target_state(project_id, "PUBLISHED")
+        db_manager.set_target_state(project_id, "VIDEO_APPROVED")
         return "YouTube upload requested"
 
     raise ValueError(f"Unknown job type: {job_type}")
@@ -1834,10 +1851,12 @@ def _run_job_worker(job_id: int, project_id: str, job_type: str, payload: dict[s
 
         if ok:
             db_manager.update_state(project_id, macro=final_state, micro="IDLE")
+            db_manager.set_target_state(project_id, final_state)
             _set_job_fields(job_id, status="completed", progress=100, message=message, finished_at="now")
             _record_event(project_id, "job_completed", message)
         else:
             db_manager.update_state(project_id, macro="FAILED", micro="IDLE")
+            db_manager.set_target_state(project_id, "FAILED")
             _set_job_fields(
                 job_id,
                 status="failed",
@@ -1847,8 +1866,11 @@ def _run_job_worker(job_id: int, project_id: str, job_type: str, payload: dict[s
                 finished_at="now",
             )
             _record_event(project_id, "job_failed", message)
+    except _JobCancelled:
+        _finish_cancelled_job(job_id, project_id)
     except Exception as exc:
         db_manager.update_state(project_id, macro="FAILED", micro="IDLE")
+        db_manager.set_target_state(project_id, "FAILED")
         _set_job_fields(
             job_id,
             status="failed",
@@ -1870,57 +1892,49 @@ def _execute_project_job(
     song: dict[str, Any],
     payload: dict[str, Any],
 ) -> tuple[bool, str, str]:
-    from echoforge.engine.workers import ai_sync, fetch_audio, fetch_lyrics, render_video, youtube_upload
-
     if job_type in {"assets_pipeline", "full_pipeline"}:
         target_state = "ASSETS_READY" if job_type == "assets_pipeline" else "VIDEO_APPROVED"
-        return _execute_pipeline_job(
-            job_id,
-            project_id,
-            song,
-            target_state,
-            fetch_audio,
-            fetch_lyrics,
-            ai_sync,
-            render_video,
-        )
+        return _execute_pipeline_job(job_id, project_id, song, target_state)
 
     if job_type == "download_audio":
         db_manager.update_state(project_id, macro="STAGED", micro="DOWNLOADING_AUDIO")
-        _set_job_fields(job_id, progress=20, message="Downloading audio")
-        ok = fetch_audio.download(song)
+        ok = _run_worker_step(job_id, project_id, song, "fetch_audio", 20, "Downloading audio")
         return ok, "AUDIO_FETCHED", "Audio downloaded" if ok else "Audio download failed"
 
     if job_type == "fetch_lyrics":
         db_manager.update_state(project_id, macro="AUDIO_FETCHED", micro="FETCHING_LYRICS")
-        _set_job_fields(job_id, progress=25, message="Fetching lyrics")
-        ok = fetch_lyrics.fetch(song)
+        ok = _run_worker_step(job_id, project_id, song, "fetch_lyrics", 25, "Fetching lyrics")
         return ok, "LYRICS_REVIEW_PENDING", "Lyrics fetched" if ok else "Lyrics fetch failed"
 
     if job_type == "auto_sync":
         db_manager.update_state(project_id, macro="LYRICS_APPROVED", micro="RUNNING_AI_SYNC")
-        _set_job_fields(job_id, progress=25, message="Generating sync timings")
-        ok = ai_sync.process(song)
+        ok = _run_worker_step(job_id, project_id, song, "ai_sync", 25, "Generating sync timings")
         return ok, "ASSETS_READY", "Sync timings generated" if ok else "Sync generation failed"
 
     if job_type == "render_preview":
         db_manager.update_state(project_id, macro="ASSETS_READY", micro="RENDERING_PREVIEW")
-        _set_job_fields(job_id, progress=25, message="Rendering preview")
-        ok = render_video.render(song, mode="preview", preview_duration=float(payload.get("previewDuration") or 45))
+        ok = _run_worker_step(
+            job_id,
+            project_id,
+            song,
+            "render_video",
+            25,
+            "Rendering preview",
+            mode="preview",
+            preview_duration=float(payload.get("previewDuration") or 45),
+        )
         return ok, "PREVIEW_PENDING", "Preview rendered" if ok else "Preview render failed"
 
     if job_type == "render_final":
         db_manager.update_state(project_id, macro="ASSETS_READY", micro="RENDERING_FINAL")
-        _set_job_fields(job_id, progress=25, message="Rendering final video")
-        ok = render_video.render(song, mode="final")
+        ok = _run_worker_step(job_id, project_id, song, "render_video", 25, "Rendering final video", mode="final")
         return ok, "VIDEO_APPROVED", "Final video rendered" if ok else "Final render failed"
 
     if job_type == "upload_youtube":
         if payload:
             save_upload_metadata(project_id, payload)
         db_manager.update_state(project_id, macro="VIDEO_APPROVED", micro="UPLOADING")
-        _set_job_fields(job_id, progress=25, message="Uploading to YouTube")
-        ok = youtube_upload.upload(song)
+        ok = _run_worker_step(job_id, project_id, song, "youtube_upload", 25, "Uploading to YouTube")
         if ok:
             _record_upload_success(project_id, song)
         return ok, "PUBLISHED", "Video uploaded" if ok else "YouTube upload failed"
@@ -1933,10 +1947,6 @@ def _execute_pipeline_job(
     project_id: str,
     song: dict[str, Any],
     target_state: str,
-    fetch_audio_module: Any,
-    fetch_lyrics_module: Any,
-    ai_sync_module: Any,
-    render_video_module: Any,
 ) -> tuple[bool, str, str]:
     workspace = Path(str(song.get("workspace_dir") or _ensure_workspace(project_id)))
     target_state = "ASSETS_READY" if target_state == "ASSETS_READY" else "VIDEO_APPROVED"
@@ -1949,16 +1959,14 @@ def _execute_pipeline_job(
     flags = _workspace_flags(workspace)
     if not flags["audio"]:
         db_manager.update_state(project_id, macro="STAGED", micro="DOWNLOADING_AUDIO")
-        _set_job_fields(job_id, progress=12, message="Downloading audio")
-        if not fetch_audio_module.download(refresh_song()):
+        if not _run_worker_step(job_id, project_id, refresh_song(), "fetch_audio", 12, "Downloading audio"):
             return False, "FAILED", "Audio download failed"
         flags = _workspace_flags(workspace)
         db_manager.update_state(project_id, macro="AUDIO_FETCHED", micro="IDLE")
 
     if not flags["lyrics"]:
         db_manager.update_state(project_id, macro="AUDIO_FETCHED", micro="FETCHING_LYRICS")
-        _set_job_fields(job_id, progress=28, message="Fetching lyrics")
-        if not fetch_lyrics_module.fetch(refresh_song()):
+        if not _run_worker_step(job_id, project_id, refresh_song(), "fetch_lyrics", 28, "Fetching lyrics"):
             return False, "FAILED", "Lyrics fetch failed"
         flags = _workspace_flags(workspace)
         db_manager.update_state(project_id, macro="LYRICS_REVIEW_PENDING", micro="IDLE")
@@ -1977,8 +1985,7 @@ def _execute_pipeline_job(
 
     if not flags["timestamps"]:
         db_manager.update_state(project_id, macro="LYRICS_APPROVED", micro="RUNNING_AI_SYNC")
-        _set_job_fields(job_id, progress=55, message="Generating sync timings")
-        if not ai_sync_module.process(refresh_song()):
+        if not _run_worker_step(job_id, project_id, refresh_song(), "ai_sync", 55, "Generating sync timings"):
             return False, "FAILED", "Sync generation failed"
         flags = _workspace_flags(workspace)
         db_manager.update_state(project_id, macro="ASSETS_READY", micro="IDLE")
@@ -1994,19 +2001,111 @@ def _execute_pipeline_job(
 
     if not flags["preview"]:
         db_manager.update_state(project_id, macro="ASSETS_READY", micro="RENDERING_PREVIEW")
-        _set_job_fields(job_id, progress=76, message="Rendering preview")
-        if not render_video_module.render(refresh_song(), mode="preview"):
+        if not _run_worker_step(job_id, project_id, refresh_song(), "render_video", 76, "Rendering preview", mode="preview"):
             return False, "FAILED", "Preview render failed"
         flags = _workspace_flags(workspace)
         db_manager.update_state(project_id, macro="PREVIEW_PENDING", micro="IDLE")
 
     if not flags["final"]:
         db_manager.update_state(project_id, macro="ASSETS_READY", micro="RENDERING_FINAL")
-        _set_job_fields(job_id, progress=88, message="Rendering final video")
-        if not render_video_module.render(refresh_song(), mode="final"):
+        if not _run_worker_step(job_id, project_id, refresh_song(), "render_video", 88, "Rendering final video", mode="final"):
             return False, "FAILED", "Final render failed"
 
     return True, "VIDEO_APPROVED", "Final video ready for upload"
+
+
+def _run_worker_step(
+    job_id: int,
+    project_id: str,
+    song: dict[str, Any],
+    worker_name: str,
+    progress: int,
+    message: str,
+    **options: Any,
+) -> bool:
+    workspace = Path(str(song.get("workspace_dir") or _ensure_workspace(project_id)))
+    log_dir = workspace / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / f"job_{job_id}_{worker_name}.log"
+    command = _worker_command(project_id, song, worker_name, **options)
+    _set_job_fields(job_id, progress=progress, message=message, log_path=str(log_file))
+
+    with log_file.open("a", encoding="utf-8", errors="replace") as handle:
+        handle.write(f"\n[{datetime.now().isoformat(timespec='seconds')}] {message}\n")
+        handle.write(" ".join(command) + "\n")
+        handle.flush()
+        process = subprocess.Popen(
+            command,
+            cwd=str(ROOT_DIR),
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            while process.poll() is None:
+                if _job_cancel_requested(job_id) or db_manager.check_abort(project_id):
+                    handle.write(f"[{datetime.now().isoformat(timespec='seconds')}] Cancel requested\n")
+                    handle.flush()
+                    _terminate_process(process)
+                    raise _JobCancelled()
+                time.sleep(0.5)
+        finally:
+            if process.poll() is None:
+                _terminate_process(process)
+        return process.returncode == 0
+
+
+def _worker_command(project_id: str, song: dict[str, Any], worker_name: str, **options: Any) -> list[str]:
+    workspace = str(song.get("workspace_dir") or _ensure_workspace(project_id))
+    title = str(song.get("title") or "Untitled Project")
+    artist = str(song.get("artist") or "Unknown Artist")
+    video_id = str(song.get("video_id") or project_id)
+    command = [sys.executable, "-m", f"echoforge.engine.workers.{worker_name}"]
+
+    if worker_name == "fetch_audio":
+        command.extend(["--video-id", video_id, "--workspace", workspace, "--title", title])
+        if song.get("url"):
+            command.extend(["--url", str(song["url"])])
+        return command
+
+    if worker_name == "fetch_lyrics":
+        return command + ["--title", title, "--artist", artist, "--workspace", workspace]
+
+    if worker_name == "ai_sync":
+        command.extend(["--workspace", workspace, "--title", title])
+        if song.get("language"):
+            command.extend(["--language", str(song["language"])])
+        return command
+
+    if worker_name == "render_video":
+        mode = "preview" if options.get("mode") == "preview" else "final"
+        preview_duration = str(float(options.get("preview_duration") or 45))
+        return command + [
+            "--workspace",
+            workspace,
+            "--title",
+            title,
+            "--artist",
+            artist,
+            "--mode",
+            mode,
+            "--preview-duration",
+            preview_duration,
+        ]
+
+    if worker_name == "youtube_upload":
+        return command + ["--workspace", workspace, "--title", title, "--artist", artist]
+
+    raise ValueError(f"Unknown worker: {worker_name}")
+
+
+def _terminate_process(process: subprocess.Popen[Any]) -> None:
+    process.terminate()
+    try:
+        process.wait(timeout=8)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=8)
 
 
 def _record_upload_success(project_id: str, song: dict[str, Any]) -> None:
@@ -2056,6 +2155,9 @@ def _job_cancel_requested(job_id: int) -> bool:
 
 def _finish_cancelled_job(job_id: int, project_id: str) -> None:
     db_manager.update_state(project_id, micro="IDLE")
+    current = db_manager.get_song(project_id) or {}
+    if current.get("current_macro_state"):
+        db_manager.set_target_state(project_id, str(current["current_macro_state"]))
     _set_job_fields(job_id, status="cancelled", message="Job cancelled", finished_at="now")
     _record_event(project_id, "job_cancelled", "Job cancelled")
 
@@ -2195,6 +2297,14 @@ def _file_kind(path: Path) -> str:
     if suffix in {".jpg", ".jpeg", ".png", ".webp"}:
         return "image"
     return "file"
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 
 def _tail_lines(path: Path, limit: int) -> list[str]:

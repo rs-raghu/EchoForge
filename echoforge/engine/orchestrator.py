@@ -44,17 +44,19 @@ from echoforge.utils.editing import promote_edited_export
 from echoforge.utils.logger import get_logger
 
 log = get_logger(__name__)
+LEGACY_ORCHESTRATOR_ENV = "ECHOFORGE_EXECUTOR"
 
 # ── Worker imports ─────────────────────────────────────────────────────────────
-try:
-    from echoforge.engine.workers import fetch_audio
-    from echoforge.engine.workers import fetch_lyrics
-    from echoforge.engine.workers import ai_sync
-    from echoforge.engine.workers import render_video
-    from echoforge.engine.workers import youtube_upload
-except ImportError as exc:
-    log.warning("⚠️  Some worker modules not loaded yet: %s", exc)
-    fetch_audio = fetch_lyrics = ai_sync = render_video = youtube_upload = None
+fetch_audio = fetch_lyrics = ai_sync = render_video = youtube_upload = None
+if os.environ.get(LEGACY_ORCHESTRATOR_ENV, "web_studio").strip().lower() in {"orchestrator", "legacy_orchestrator"}:
+    try:
+        from echoforge.engine.workers import fetch_audio
+        from echoforge.engine.workers import fetch_lyrics
+        from echoforge.engine.workers import ai_sync
+        from echoforge.engine.workers import render_video
+        from echoforge.engine.workers import youtube_upload
+    except ImportError as exc:
+        log.warning("Worker modules not loaded yet: %s", exc)
 
 
 # ── Worker wrapper functions ───────────────────────────────────────────────────
@@ -149,6 +151,14 @@ class ProcessManager:
     # ── Main loop ──────────────────────────────────────────────────────────────
 
     def run_forever(self) -> None:
+        executor = os.environ.get(LEGACY_ORCHESTRATOR_ENV, "web_studio").strip().lower()
+        if executor not in {"orchestrator", "legacy_orchestrator"}:
+            log.warning(
+                "Legacy orchestrator is disabled. Web Studio owns execution. "
+                "Set %s=orchestrator only if you intentionally want legacy execution.",
+                LEGACY_ORCHESTRATOR_ENV,
+            )
+            return
         log.info("⚙️  Orchestrator Daemon started — watching DB for jobs...")
         db_manager.init_db()
 

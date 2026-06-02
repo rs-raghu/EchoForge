@@ -29,6 +29,7 @@ log = get_logger(__name__)
 REMOTION_DIR = str(ROOT_DIR / "renderer" / "remotion")
 PUBLIC_DIR   = os.path.join(REMOTION_DIR, "public")
 FPS = 30
+INTRO_SECONDS = 5
 
 
 def _workspace_file(workspace_dir: str, *relative_paths: str) -> str | None:
@@ -108,6 +109,15 @@ def _copy_finished_output(output_video: str, archive_video: str) -> None:
         shutil.copyfile(output_video, archive_video)
 
 
+def _render_fps(props: dict) -> int:
+    design = props.get("design") if isinstance(props.get("design"), dict) else {}
+    try:
+        fps = int(design.get("fps") or FPS)
+    except (TypeError, ValueError):
+        fps = FPS
+    return fps if fps > 0 else FPS
+
+
 def render(song: dict, mode: str = "final", preview_duration: float = 45) -> bool:
     """
     Render final_video.mp4 for *song* into workspace_dir.
@@ -126,9 +136,6 @@ def render(song: dict, mode: str = "final", preview_duration: float = 45) -> boo
     ts_path     = _workspace_file(workspace_dir, "timestamps.json", "sync/timestamps.json")
     output_video, archive_video = _output_paths(workspace_dir, mode)
 
-    if False and os.path.exists(output_video):
-        log.info("✅ Video already rendered — skipping.")
-        return True
 
     if not audio_path:
         log.error("❌ audio.mp3 missing from workspace.")
@@ -144,6 +151,8 @@ def render(song: dict, mode: str = "final", preview_duration: float = 45) -> boo
     log.info("🎬 Preparing Remotion render for '%s'...", title)
 
     try:
+        props = _load_render_props(workspace_dir, title, artist)
+        fps = _render_fps(props)
         duration_seconds = (
             _get_audio_duration_seconds(audio_path)
             or _get_timestamp_duration_seconds(ts_path)
@@ -151,7 +160,7 @@ def render(song: dict, mode: str = "final", preview_duration: float = 45) -> boo
         )
         if mode == "preview":
             duration_seconds = max(8, min(duration_seconds, float(preview_duration or 45)))
-        duration_in_frames = max(int((duration_seconds + 2) * FPS), FPS)
+        duration_in_frames = max(int((duration_seconds + INTRO_SECONDS + 2) * fps), fps)
 
         os.makedirs(PUBLIC_DIR, exist_ok=True)
 
@@ -160,7 +169,6 @@ def render(song: dict, mode: str = "final", preview_duration: float = 45) -> boo
         shutil.copy(ts_path,    os.path.join(PUBLIC_DIR, "timestamps.json"))
 
         # Write props file
-        props = _load_render_props(workspace_dir, title, artist)
         props.update(
             {
                 "audioUrl": "audio.mp3",

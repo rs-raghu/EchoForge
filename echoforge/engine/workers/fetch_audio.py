@@ -119,12 +119,14 @@ if __name__ == "__main__":
     parser.add_argument("--video-id",  required=True,  help="YouTube video ID")
     parser.add_argument("--workspace", required=True,  help="Workspace directory path")
     parser.add_argument("--title",     default="Test", help="Song title (for logging)")
+    parser.add_argument("--url",       default=None,   help="Optional source URL")
     args = parser.parse_args()
 
     song = {
         "video_id":     args.video_id,
         "title":        args.title,
         "workspace_dir": args.workspace,
+        "url":          args.url,
     }
     os.makedirs(args.workspace, exist_ok=True)
     ok = download(song)

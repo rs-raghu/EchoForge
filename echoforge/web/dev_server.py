@@ -233,7 +233,7 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
             request_path = "/index.html"
         candidate = (STATIC_DIR / request_path.lstrip("/")).resolve()
         static_root = STATIC_DIR.resolve()
-        if not str(candidate).startswith(str(static_root)) or not candidate.exists() or not candidate.is_file():
+        if not _is_relative_to(candidate, static_root) or not candidate.exists() or not candidate.is_file():
             candidate = STATIC_DIR / "index.html"
 
         if not candidate.exists():
@@ -250,6 +250,14 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
         self.send_header("content-length", str(len(content)))
         self.end_headers()
         self.wfile.write(content)
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 
 def run(host: str = "127.0.0.1", port: int = 8765) -> None:

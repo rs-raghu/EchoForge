@@ -110,9 +110,9 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
   const { segments } = lyricsData;
   const hasSegments = segments.length > 0;
 
-  const currentTime = frame / fps;
+  const lyricTime = Math.max(0, (frame - LYRICS_START_FRAME) / fps);
   const currentSegmentIndex = segments.findIndex((segment) => {
-    return currentTime >= segment.start && currentTime <= segment.end;
+    return lyricTime >= segment.start && lyricTime <= segment.end;
   });
 
   const activeSegment = segments[currentSegmentIndex];
@@ -123,10 +123,8 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
     }
 
     return segment.words.map((w, idx) => {
-      const wordStartFrame = w.start * fps;
-      const wordEndFrame = w.end * fps;
-      const isWordActive = frame >= wordStartFrame && frame <= wordEndFrame;
-      const isWordPassed = frame > wordEndFrame;
+      const isWordActive = lyricTime >= w.start && lyricTime <= w.end;
+      const isWordPassed = lyricTime > w.end;
 
       let color = 'inherit';
       if (isWordActive) color = highlightColor;
@@ -145,7 +143,11 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
 
   return (
     <AbsoluteFill style={{ backgroundColor, color: textColor, fontFamily }}>
-      {audioUrl ? <Audio src={staticFile(audioUrl)} /> : null}
+      {audioUrl ? (
+        <Sequence from={LYRICS_START_FRAME}>
+          <Audio src={staticFile(audioUrl)} />
+        </Sequence>
+      ) : null}
 
       <Sequence from={0} durationInFrames={LOGO_DURATION_FRAMES}>
         <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', opacity: logoOpacity }}>

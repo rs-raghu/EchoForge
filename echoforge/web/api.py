@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -10,6 +11,18 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from . import service
+
+LOCAL_ORIGIN_REGEX = (
+    r"^https?://(?:localhost|127\.0\.0\.1|\[::1\]|"
+    r"10(?:\.\d{1,3}){3}|"
+    r"172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}|"
+    r"192\.168(?:\.\d{1,3}){2})(?::\d+)?$"
+)
+
+
+def _cors_origins() -> list[str]:
+    configured = os.environ.get("ECHOFORGE_CORS_ORIGINS", "")
+    return [origin.strip().rstrip("/") for origin in configured.split(",") if origin.strip()]
 
 
 class ProjectCreate(BaseModel):
@@ -53,7 +66,8 @@ class GenericPayload(BaseModel):
 app = FastAPI(title="EchoForge Web Studio", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8765", "http://127.0.0.1:8765"],
+    allow_origins=_cors_origins(),
+    allow_origin_regex=LOCAL_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

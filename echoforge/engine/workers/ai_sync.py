@@ -74,7 +74,7 @@ def run_demucs(audio_path: str, workspace_dir: str) -> str | None:
 
 # ─── Whisper alignment ────────────────────────────────────────────────────────
 
-def run_whisper_sync(vocals_path: str, lyrics_txt_path: str, workspace_dir: str) -> bool:
+def run_whisper_sync(vocals_path: str, lyrics_txt_path: str, workspace_dir: str, language: str | None = None) -> bool:
     """
     Force-align lyrics.txt to vocals using whisper-timestamped.
     Saves raw output to timestamps_raw.json and clean output to timestamps.json.
@@ -89,11 +89,10 @@ def run_whisper_sync(vocals_path: str, lyrics_txt_path: str, workspace_dir: str)
             lyrics_text = fh.read()
 
         model  = whisper.load_model("base", device="cpu")
-        result = whisper.transcribe(
-            model, vocals_path,
-            initial_prompt=lyrics_text,
-            language="en",
-        )
+        transcribe_options = {"initial_prompt": lyrics_text}
+        if language:
+            transcribe_options["language"] = language
+        result = whisper.transcribe(model, vocals_path, **transcribe_options)
 
         # Save raw output as backup
         raw_path = os.path.join(workspace_dir, "timestamps_raw.json")
@@ -138,15 +137,17 @@ def process_lrc_timestamps(lrc_path: str, workspace_dir: str) -> bool:
     log.info("⚡ Processing pre-synced LRC: %s", lrc_path)
     try:
         segments = []
+        timestamp_pattern = re.compile(r"\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]")
         with open(lrc_path, "r", encoding="utf-8") as fh:
             for line in fh:
-                m = re.match(r"\[(\d{2}):(\d{2}\.\d{2,3})\](.*)", line)
-                if m:
-                    start = int(m.group(1)) * 60 + float(m.group(2))
-                    text  = m.group(3).strip()
+                matches = list(timestamp_pattern.finditer(line))
+                if matches:
+                    text = timestamp_pattern.sub("", line).strip()
                     if text:
-                        segments.append({"start": start, "end": start + 3.0,
-                                         "text": text, "words": []})
+                        for match in matches:
+                            decimals = (match.group(3) or "0").ljust(3, "0")[:3]
+                            start = int(match.group(1)) * 60 + int(match.group(2)) + int(decimals) / 1000
+                            segments.append({"start": start, "end": start + 3.0, "text": text, "words": []})
 
         if not segments:
             log.error("❌ No timestamped lines found in LRC.")
@@ -202,7 +203,7 @@ def process(song: dict) -> bool:
         if not vocals:
             return False
 
-        return run_whisper_sync(vocals, txt_path, workspace_dir)
+        return run_whisper_sync(vocals, txt_path, workspace_dir, language=song.get("language"))
 
     log.error("❌ No lyrics file (.lrc or .txt) found in workspace.")
     return False
@@ -214,9 +215,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="EchoForge AI Sync Worker")
     parser.add_argument("--workspace", required=True, help="Path to workspace folder")
     parser.add_argument("--title",     default="Test", help="Song title (for logging)")
+    parser.add_argument("--language",  default=None, help="Optional Whisper language code")
     args = parser.parse_args()
 
-    song = {"title": args.title, "workspace_dir": args.workspace}
+    song = {"title": args.title, "workspace_dir": args.workspace, "language": args.language}
     ok   = process(song)
     print(f"\n{'✅ Success' if ok else '❌ Failed'}")
     sys.exit(0 if ok else 1)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   createProject,
   fetchCharts,
@@ -746,7 +746,7 @@ function ManualProjectForm({
   const [artist, setArtist] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
 
-  async function submit(event: React.FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
     setBusyKey("create-project");
     setError(null);
@@ -896,7 +896,7 @@ function ProjectRow({
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="panel">
       <div className="panel-header">
@@ -916,7 +916,7 @@ function SummaryTile({ card }: { card: SummaryCard }) {
   );
 }
 
-function StatusBadge({ tone, children }: { tone: string; children: React.ReactNode }) {
+function StatusBadge({ tone, children }: { tone: string; children: ReactNode }) {
   return <span className={`status-badge ${tone}`}>{children}</span>;
 }
 

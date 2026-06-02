@@ -16,7 +16,13 @@ import type {
   UploadMetadata,
 } from "./types";
 
-const apiBase = window.location.port === "5173" ? "http://127.0.0.1:8765" : "";
+declare global {
+  interface Window {
+    __ECHOFORGE_API_BASE__?: string;
+  }
+}
+
+const apiBase = (window.__ECHOFORGE_API_BASE__ || window.localStorage.getItem("echoforgeApiBase") || "").replace(/\/$/, "");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBase}${path}`, {

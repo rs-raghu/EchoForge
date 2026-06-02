@@ -9,9 +9,22 @@ const frontendDir = path.join(rootDir, "apps", "web-studio", "frontend");
 const distDir = path.join(frontendDir, "dist");
 const entryPoint = path.join(frontendDir, "src", "main.tsx");
 const indexHtml = path.join(frontendDir, "index.html");
+const frontendNodeModules = path.join(frontendDir, "node_modules");
 const remotionNodeModules = path.join(rootDir, "renderer", "remotion", "node_modules");
-const esbuild = require(path.join(remotionNodeModules, "esbuild"));
+const nodeModulePaths = [frontendNodeModules, remotionNodeModules].filter((candidate) => fs.existsSync(candidate));
+const esbuild = requireFirst("esbuild");
 const watch = process.argv.includes("--watch");
+
+function requireFirst(packageName) {
+  for (const nodeModules of nodeModulePaths) {
+    try {
+      return require(path.join(nodeModules, packageName));
+    } catch {
+      // Try the next installed dependency root.
+    }
+  }
+  throw new Error(`Missing ${packageName}. Run npm install in apps/web-studio/frontend or renderer/remotion.`);
+}
 
 function prepareDist() {
   fs.rmSync(distDir, { recursive: true, force: true });
@@ -29,7 +42,7 @@ const buildOptions = {
   format: "esm",
   platform: "browser",
   target: ["es2020"],
-  nodePaths: [remotionNodeModules],
+  nodePaths: nodeModulePaths,
   sourcemap: false,
   minify: !watch,
   loader: {
