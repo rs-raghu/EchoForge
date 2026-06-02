@@ -50,6 +50,12 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
             elif path.startswith("/api/projects/") and path.endswith("/files"):
                 project_id = unquote(path.split("/")[3])
                 self._json(service.list_project_files(project_id))
+            elif path.startswith("/api/projects/") and path.endswith("/lyrics/versions"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.list_lyrics_versions(project_id))
+            elif path.startswith("/api/projects/") and path.endswith("/lyrics"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.get_lyrics(project_id))
             elif path.startswith("/api/projects/"):
                 project_id = unquote(path.split("/")[3])
                 self._json(service.get_project(project_id))
@@ -90,6 +96,29 @@ class StudioRequestHandler(BaseHTTPRequestHandler):
                 project_id = unquote(path.split("/")[3])
                 action = str(payload.get("action") or "")
                 self._json(service.run_project_action(project_id, action, payload))
+            elif path.startswith("/api/projects/") and path.endswith("/lyrics/approve"):
+                project_id = unquote(path.split("/")[3])
+                self._json(service.approve_lyrics(project_id, payload))
+            else:
+                self._error(HTTPStatus.NOT_FOUND, "Route not found")
+        except KeyError:
+            self._error(HTTPStatus.NOT_FOUND, "Project not found")
+        except ValueError as exc:
+            self._error(HTTPStatus.BAD_REQUEST, str(exc))
+        except Exception as exc:
+            self._error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+
+    def do_PUT(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path
+        query = parse_qs(parsed.query)
+        payload = self._read_json()
+
+        try:
+            if path.startswith("/api/projects/") and path.endswith("/lyrics"):
+                project_id = unquote(path.split("/")[3])
+                draft = query.get("draft", ["false"])[0].lower() in {"1", "true", "yes"}
+                self._json(service.save_lyrics(project_id, payload, draft=draft))
             else:
                 self._error(HTTPStatus.NOT_FOUND, "Route not found")
         except KeyError:

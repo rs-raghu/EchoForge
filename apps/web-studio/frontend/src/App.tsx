@@ -9,6 +9,7 @@ import {
   runProjectAction,
   stageNextProject,
 } from "./api";
+import { LyricsEditor } from "./LyricsEditor";
 import type { DashboardPayload, LogItem, ProjectDetail, ProjectSummary, SummaryCard } from "./types";
 
 type ViewKey =
@@ -16,6 +17,7 @@ type ViewKey =
   | "discover"
   | "queue"
   | "projects"
+  | "lyrics"
   | "templates"
   | "render"
   | "upload"
@@ -27,6 +29,7 @@ const navItems: Array<{ key: ViewKey; label: string }> = [
   { key: "discover", label: "Discover" },
   { key: "queue", label: "Queue" },
   { key: "projects", label: "Projects" },
+  { key: "lyrics", label: "Lyrics" },
   { key: "templates", label: "Templates" },
   { key: "render", label: "Render Queue" },
   { key: "upload", label: "Upload Manager" },
@@ -134,6 +137,16 @@ export function App() {
     }
   }
 
+  async function openLyrics(projectId: string) {
+    setSelectedId(projectId);
+    setView("lyrics");
+    try {
+      setSelected(await fetchProject(projectId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Project could not be opened");
+    }
+  }
+
   return (
     <div className="studio-shell">
       <aside className="sidebar">
@@ -190,6 +203,7 @@ export function App() {
             busyKey={busyKey}
             onAction={executeAction}
             onOpen={openProject}
+            onOpenLyrics={openLyrics}
             onStageNext={stageNext}
             onSwitchView={setView}
           />
@@ -201,6 +215,7 @@ export function App() {
             busyKey={busyKey}
             onAction={executeAction}
             onOpen={openProject}
+            onOpenLyrics={openLyrics}
             onStageNext={stageNext}
           />
         ) : null}
@@ -212,6 +227,7 @@ export function App() {
             busyKey={busyKey}
             mode={mode}
             onOpen={openProject}
+            onOpenLyrics={openLyrics}
             onAction={executeAction}
             onCreated={async (project) => {
               setSelectedId(project.id);
@@ -220,6 +236,18 @@ export function App() {
             }}
             setBusyKey={setBusyKey}
             setError={setError}
+          />
+        ) : null}
+        {view === "lyrics" ? (
+          <LyricsEditor
+            project={selected}
+            setError={setError}
+            onProjectChanged={async () => {
+              await refresh();
+              if (selectedId) {
+                setSelected(await fetchProject(selectedId));
+              }
+            }}
           />
         ) : null}
         {view === "logs" ? <LogsView logs={logs} /> : null}
@@ -235,6 +263,7 @@ function DashboardView({
   busyKey,
   onAction,
   onOpen,
+  onOpenLyrics,
   onStageNext,
   onSwitchView,
 }: {
@@ -243,6 +272,7 @@ function DashboardView({
   busyKey: string | null;
   onAction: (project: ProjectSummary, action: string, target?: string) => Promise<void>;
   onOpen: (projectId: string) => Promise<void>;
+  onOpenLyrics: (projectId: string) => Promise<void>;
   onStageNext: () => Promise<void>;
   onSwitchView: (view: ViewKey) => void;
 }) {
@@ -285,6 +315,7 @@ function DashboardView({
                   project={project}
                   onAction={onAction}
                   onOpen={onOpen}
+                  onOpenLyrics={onOpenLyrics}
                 />
               ))}
             </div>
@@ -380,12 +411,14 @@ function QueueView({
   busyKey,
   onAction,
   onOpen,
+  onOpenLyrics,
   onStageNext,
 }: {
   dashboard: DashboardPayload | null;
   busyKey: string | null;
   onAction: (project: ProjectSummary, action: string, target?: string) => Promise<void>;
   onOpen: (projectId: string) => Promise<void>;
+  onOpenLyrics: (projectId: string) => Promise<void>;
   onStageNext: () => Promise<void>;
 }) {
   const queue = dashboard?.queue ?? [];
@@ -402,7 +435,14 @@ function QueueView({
         ) : (
           <div className="table-list">
             {queue.map((project) => (
-              <ProjectRow busyKey={busyKey} key={project.id} project={project} onAction={onAction} onOpen={onOpen} />
+              <ProjectRow
+                busyKey={busyKey}
+                key={project.id}
+                project={project}
+                onAction={onAction}
+                onOpen={onOpen}
+                onOpenLyrics={onOpenLyrics}
+              />
             ))}
           </div>
         )}
@@ -418,6 +458,7 @@ function ProjectsView({
   busyKey,
   mode,
   onOpen,
+  onOpenLyrics,
   onAction,
   onCreated,
   setBusyKey,
@@ -429,6 +470,7 @@ function ProjectsView({
   busyKey: string | null;
   mode: "simple" | "advanced";
   onOpen: (projectId: string) => Promise<void>;
+  onOpenLyrics: (projectId: string) => Promise<void>;
   onAction: (project: ProjectSummary, action: string, target?: string) => Promise<void>;
   onCreated: (project: ProjectDetail) => Promise<void>;
   setBusyKey: (key: string | null) => void;
@@ -455,7 +497,7 @@ function ProjectsView({
           ))}
         </div>
       </Panel>
-      <ProjectDetailPanel busyKey={busyKey} mode={mode} project={selected} onAction={onAction} />
+      <ProjectDetailPanel busyKey={busyKey} mode={mode} project={selected} onAction={onAction} onOpenLyrics={onOpenLyrics} />
     </section>
   );
 }
@@ -465,11 +507,13 @@ function ProjectDetailPanel({
   busyKey,
   mode,
   onAction,
+  onOpenLyrics,
 }: {
   project: ProjectDetail | null;
   busyKey: string | null;
   mode: "simple" | "advanced";
   onAction: (project: ProjectSummary, action: string, target?: string) => Promise<void>;
+  onOpenLyrics: (projectId: string) => Promise<void>;
 }) {
   if (!project) {
     return (
@@ -491,14 +535,23 @@ function ProjectDetailPanel({
         </div>
         <ProgressBar value={project.progress} />
         <div className="action-strip">
+          {project.filesReady.lyrics || project.rawState === "LYRICS_REVIEW_PENDING" ? (
+            <button className="button primary" onClick={() => void onOpenLyrics(project.id)} type="button">
+              Edit Lyrics
+            </button>
+          ) : null}
           {project.primaryAction ? (
             <button
-              className="button primary"
+              className={project.primaryAction === "approve_lyrics" ? "button" : "button primary"}
               disabled={busyKey === `${project.id}:${project.primaryAction}`}
-              onClick={() => void onAction(project, project.primaryAction ?? "")}
+              onClick={() =>
+                project.primaryAction === "approve_lyrics"
+                  ? void onOpenLyrics(project.id)
+                  : void onAction(project, project.primaryAction ?? "")
+              }
               type="button"
             >
-              {primaryLabels[project.primaryAction] ?? project.nextAction}
+              {project.primaryAction === "approve_lyrics" ? "Open Lyrics" : primaryLabels[project.primaryAction] ?? project.nextAction}
             </button>
           ) : null}
           {project.rawState === "STAGED" || project.rawState === "PAUSED" ? (
@@ -633,11 +686,13 @@ function ProjectCard({
   busyKey,
   onAction,
   onOpen,
+  onOpenLyrics,
 }: {
   project: ProjectSummary;
   busyKey: string | null;
   onAction: (project: ProjectSummary, action: string, target?: string) => Promise<void>;
   onOpen: (projectId: string) => Promise<void>;
+  onOpenLyrics: (projectId: string) => Promise<void>;
 }) {
   return (
     <article className="project-card">
@@ -654,10 +709,14 @@ function ProjectCard({
           <button
             className="button primary small"
             disabled={busyKey === `${project.id}:${project.primaryAction}`}
-            onClick={() => void onAction(project, project.primaryAction ?? "")}
+            onClick={() =>
+              project.primaryAction === "approve_lyrics"
+                ? void onOpenLyrics(project.id)
+                : void onAction(project, project.primaryAction ?? "")
+            }
             type="button"
           >
-            {primaryLabels[project.primaryAction] ?? project.nextAction}
+            {project.primaryAction === "approve_lyrics" ? "Open Lyrics" : primaryLabels[project.primaryAction] ?? project.nextAction}
           </button>
         ) : null}
         <button className="button small" onClick={() => void onOpen(project.id)} type="button">
@@ -673,11 +732,13 @@ function ProjectRow({
   busyKey,
   onAction,
   onOpen,
+  onOpenLyrics,
 }: {
   project: ProjectSummary;
   busyKey: string | null;
   onAction: (project: ProjectSummary, action: string, target?: string) => Promise<void>;
   onOpen: (projectId: string) => Promise<void>;
+  onOpenLyrics: (projectId: string) => Promise<void>;
 }) {
   return (
     <div className="table-row">
@@ -692,10 +753,14 @@ function ProjectRow({
           <button
             className="button small primary"
             disabled={busyKey === `${project.id}:${project.primaryAction}`}
-            onClick={() => void onAction(project, project.primaryAction ?? "")}
+            onClick={() =>
+              project.primaryAction === "approve_lyrics"
+                ? void onOpenLyrics(project.id)
+                : void onAction(project, project.primaryAction ?? "")
+            }
             type="button"
           >
-            {primaryLabels[project.primaryAction] ?? project.nextAction}
+            {project.primaryAction === "approve_lyrics" ? "Open Lyrics" : primaryLabels[project.primaryAction] ?? project.nextAction}
           </button>
         ) : null}
         <button className="button small" onClick={() => void onOpen(project.id)} type="button">
@@ -780,4 +845,3 @@ function formatBytes(bytes: number) {
   }
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
-

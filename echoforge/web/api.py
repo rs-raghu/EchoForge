@@ -29,6 +29,12 @@ class DiscoveryRequest(BaseModel):
     force: bool = False
 
 
+class LyricsSaveRequest(BaseModel):
+    lines: list[dict[str, Any]] | None = None
+    text: str | None = None
+    clearDraft: bool = True
+
+
 app = FastAPI(title="EchoForge Web Studio", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -90,6 +96,39 @@ def project_files(project_id: str) -> list[dict[str, Any]]:
         raise HTTPException(status_code=404, detail="Project not found") from exc
 
 
+@app.get("/api/projects/{project_id}/lyrics")
+def get_lyrics(project_id: str) -> dict[str, Any]:
+    try:
+        return service.get_lyrics(project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+
+
+@app.put("/api/projects/{project_id}/lyrics")
+def save_lyrics(project_id: str, payload: LyricsSaveRequest, draft: bool = False) -> dict[str, Any]:
+    try:
+        return service.save_lyrics(project_id, payload.model_dump(exclude_none=True), draft=draft)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+
+
+@app.post("/api/projects/{project_id}/lyrics/approve")
+def approve_lyrics(project_id: str, payload: LyricsSaveRequest | None = None) -> dict[str, Any]:
+    try:
+        data = payload.model_dump(exclude_none=True) if payload else {}
+        return service.approve_lyrics(project_id, data)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+
+
+@app.get("/api/projects/{project_id}/lyrics/versions")
+def lyrics_versions(project_id: str) -> list[dict[str, Any]]:
+    try:
+        return service.list_lyrics_versions(project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+
+
 @app.get("/api/logs")
 def logs(project_id: str | None = None, limit: int = 80) -> list[dict[str, Any]]:
     return service.read_logs(project_id=project_id, limit=limit)
@@ -106,4 +145,3 @@ def stage_next() -> dict[str, Any]:
     if not project:
         raise HTTPException(status_code=404, detail="Queue is empty")
     return project
-

@@ -75,3 +75,44 @@ export type ProjectDetail = ProjectSummary & {
   logs: LogItem[];
 };
 
+export type LyricLineType = "lyric" | "section_label" | "instrumental" | "note";
+
+export type LyricLine = {
+  id: string;
+  index: number;
+  type: LyricLineType;
+  text: string;
+  timestamp?: string | null;
+  raw?: string;
+};
+
+export type LyricWarning = {
+  lineId: string;
+  index: number;
+  severity: "info" | "warning" | "danger";
+  message: string;
+};
+
+export type LyricsVersion = {
+  id: number;
+  filePath: string;
+  versionLabel: string;
+  createdAt: string;
+  createdBy: string;
+  notes?: string | null;
+  isApproved: boolean;
+};
+
+export type LyricsPayload = {
+  projectId: string;
+  source: "current" | "draft";
+  sourcePath: string;
+  activePath: string;
+  draftPath: string;
+  format: "text" | "lrc";
+  hasDraft: boolean;
+  rawText: string;
+  lines: LyricLine[];
+  warnings: LyricWarning[];
+  versions: LyricsVersion[];
+};

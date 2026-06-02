@@ -53,6 +53,11 @@ The Web Studio updates the existing SQLite state machine. To process long-runnin
 python -m echoforge.engine.orchestrator
 ```
 
+## Built Phases
+
+- Phase 1: Web Studio shell, project dashboard, queue controls, project overview, logs.
+- Phase 2: Lyrics editor with draft saves, version backups, warnings, and approval.
+
 ## Useful Commands
 
 ```bash

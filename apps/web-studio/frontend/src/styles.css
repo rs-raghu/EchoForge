@@ -461,6 +461,12 @@ small {
   background: transparent;
 }
 
+.button.success {
+  border-color: #24875b;
+  background: #1f5c3e;
+  color: #e9f7ef;
+}
+
 .job-indicator {
   display: inline-flex;
   align-items: center;
@@ -510,6 +516,12 @@ select {
   background: #101316;
   color: #ffffff;
   padding: 0 10px;
+}
+
+input[type="checkbox"] {
+  width: 16px;
+  min-height: 16px;
+  padding: 0;
 }
 
 .manual-form {
@@ -622,13 +634,152 @@ select {
   padding: 16px;
 }
 
+.lyrics-layout {
+  display: grid;
+  grid-template-columns: minmax(210px, 260px) minmax(0, 1fr) minmax(240px, 320px);
+  gap: 16px;
+  align-items: start;
+}
+
+.lyrics-side {
+  display: grid;
+  gap: 14px;
+}
+
+.lyrics-meta,
+.lyrics-tools,
+.warning-list,
+.version-list {
+  display: grid;
+  gap: 8px;
+}
+
+.lyrics-meta {
+  color: #9aa4ad;
+}
+
+.lyrics-meta strong {
+  color: #ffffff;
+  font-size: 16px;
+}
+
+.lyrics-tools .button {
+  width: 100%;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #cbd3db;
+}
+
+.save-state {
+  min-height: 34px;
+  border: 1px solid #303842;
+  border-radius: 6px;
+  color: #9aa4ad;
+  padding: 8px 10px;
+}
+
+.lyrics-editor {
+  min-width: 0;
+}
+
+.lyric-lines {
+  display: grid;
+  gap: 6px;
+}
+
+.lyric-row {
+  display: grid;
+  grid-template-columns: 44px 138px minmax(220px, 1fr) 104px minmax(260px, auto);
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid #252a2f;
+  border-radius: 6px;
+  background: #13171a;
+  padding: 8px;
+}
+
+.lyric-row-header {
+  min-height: 32px;
+  border-color: transparent;
+  background: transparent;
+  color: #8c96a0;
+  font-size: 12px;
+  padding-bottom: 4px;
+}
+
+.lyric-row.has-warning {
+  border-color: #7c6225;
+}
+
+.line-number {
+  color: #8c96a0;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-input {
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+
+.line-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.line-warning {
+  grid-column: 3 / 6;
+  color: #f1c75b;
+  font-size: 12px;
+}
+
+.warning-item,
+.version-item {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #252a2f;
+  border-radius: 6px;
+  background: #13171a;
+  padding: 10px;
+}
+
+.warning-item.warning {
+  border-color: #8b6d1f;
+}
+
+.warning-item.danger {
+  border-color: #8c3434;
+}
+
+.warning-item strong,
+.version-item strong {
+  color: #ffffff;
+  font-size: 13px;
+}
+
+.warning-item span,
+.version-item span {
+  color: #9aa4ad;
+  font-size: 12px;
+}
+
+.versions-header {
+  margin-top: 10px;
+}
+
 @media (max-width: 1180px) {
   .summary-grid {
     grid-template-columns: repeat(3, minmax(140px, 1fr));
   }
 
   .split-layout,
-  .project-layout {
+  .project-layout,
+  .lyrics-layout {
     grid-template-columns: 1fr;
   }
 }
@@ -649,8 +800,13 @@ select {
   .summary-grid,
   .form-grid,
   .manual-form,
-  .checklist {
+  .checklist,
+  .lyric-row {
     grid-template-columns: 1fr;
+  }
+
+  .line-warning {
+    grid-column: auto;
   }
 
   .table-row {
@@ -670,4 +826,3 @@ select {
     grid-template-columns: 1fr;
   }
 }
-

@@ -322,6 +322,112 @@ def run_project_action(project_id: str, action: str, payload: dict[str, Any] | N
     return get_project(project_id)
 
 
+def get_lyrics(project_id: str) -> dict[str, Any]:
+    init_web_studio()
+    row = _song_row(project_id)
+    if row is None:
+        raise KeyError(project_id)
+
+    workspace = _workspace_path(project_id, row["workspace_dir"])
+    draft_path = _lyrics_draft_path(workspace)
+    active_path = _lyrics_active_path(workspace)
+    read_path = draft_path if draft_path.exists() else active_path
+    content = read_path.read_text(encoding="utf-8", errors="replace") if read_path.exists() else ""
+    lines = _parse_lyric_lines(content)
+    warnings = _lyrics_warnings(lines)
+    return {
+        "projectId": project_id,
+        "source": "draft" if draft_path.exists() else "current",
+        "sourcePath": str(read_path) if read_path.exists() else "",
+        "activePath": str(active_path),
+        "draftPath": str(draft_path),
+        "format": "lrc" if _content_has_timestamps(lines) else "text",
+        "hasDraft": draft_path.exists(),
+        "rawText": content,
+        "lines": lines,
+        "warnings": warnings,
+        "versions": list_lyrics_versions(project_id),
+    }
+
+
+def save_lyrics(project_id: str, payload: dict[str, Any], draft: bool = False) -> dict[str, Any]:
+    init_web_studio()
+    row = _song_row(project_id)
+    if row is None:
+        raise KeyError(project_id)
+
+    workspace = _workspace_path(project_id, row["workspace_dir"])
+    workspace.mkdir(parents=True, exist_ok=True)
+    lines = _lyrics_lines_from_payload(payload)
+    content = _render_lyrics_lines(lines)
+
+    if draft:
+        target = _lyrics_draft_path(workspace)
+        _atomic_write_text(target, content)
+        _record_event(project_id, "lyrics_draft_saved", "Lyrics draft saved")
+    else:
+        target = _lyrics_target_path(workspace, lines)
+        _backup_file_version(project_id, target, approved=False, notes="Backup before lyrics save")
+        _atomic_write_text(target, content)
+        if bool(payload.get("clearDraft", True)):
+            draft_path = _lyrics_draft_path(workspace)
+            if draft_path.exists():
+                draft_path.unlink()
+        _record_event(project_id, "lyrics_saved", "Lyrics saved")
+
+    return get_lyrics(project_id)
+
+
+def approve_lyrics(project_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    init_web_studio()
+    payload = payload or {}
+    row = _song_row(project_id)
+    if row is None:
+        raise KeyError(project_id)
+
+    workspace = _workspace_path(project_id, row["workspace_dir"])
+    if payload.get("lines") or payload.get("text") is not None:
+        save_lyrics(project_id, payload, draft=False)
+    elif _lyrics_draft_path(workspace).exists():
+        draft_content = _lyrics_draft_path(workspace).read_text(encoding="utf-8", errors="replace")
+        save_lyrics(project_id, {"lines": _parse_lyric_lines(draft_content)}, draft=False)
+
+    active_path = _lyrics_active_path(workspace)
+    if active_path.exists():
+        _backup_file_version(project_id, active_path, approved=True, notes="Approved lyrics version")
+
+    db_manager.update_state(project_id, macro="LYRICS_APPROVED", micro="IDLE")
+    _record_event(project_id, "lyrics_approved", "Lyrics approved")
+    return get_lyrics(project_id)
+
+
+def list_lyrics_versions(project_id: str) -> list[dict[str, Any]]:
+    init_web_studio()
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, file_path, version_label, created_at, created_by, notes, is_approved
+            FROM lyrics_versions
+            WHERE project_id=?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 50
+            """,
+            (project_id,),
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "filePath": row["file_path"],
+            "versionLabel": row["version_label"],
+            "createdAt": row["created_at"],
+            "createdBy": row["created_by"],
+            "notes": row["notes"],
+            "isApproved": bool(row["is_approved"]),
+        }
+        for row in rows
+    ]
+
+
 def list_project_files(project_id: str) -> list[dict[str, Any]]:
     row = _song_row(project_id)
     if row is None:
@@ -503,22 +609,178 @@ def _backup_lyrics_if_present(project_id: str, song: dict[str, Any]) -> None:
     for name in ("lyrics.lrc", "lyrics.txt", "lyrics/lyrics.lrc", "lyrics/lyrics.txt"):
         path = workspace / name
         if path.exists():
-            with _connect() as conn:
-                conn.execute(
-                    """
-                    INSERT INTO lyrics_versions
-                        (project_id, file_path, version_label, notes, is_approved)
-                    VALUES (?, ?, ?, ?, 1)
-                    """,
-                    (
-                        project_id,
-                        str(path),
-                        datetime.now().strftime("approved-%Y%m%d-%H%M%S"),
-                        "Approved from Web Studio shell",
-                    ),
-                )
-                conn.commit()
+            _backup_file_version(project_id, path, approved=True, notes="Approved from Web Studio shell")
             return
+
+
+def _lyrics_draft_path(workspace: Path) -> Path:
+    return workspace / "lyrics.draft.txt"
+
+
+def _lyrics_active_path(workspace: Path) -> Path:
+    for name in ("lyrics.lrc", "lyrics.txt", "lyrics/lyrics.lrc", "lyrics/lyrics.txt"):
+        path = workspace / name
+        if path.exists():
+            return path
+    return workspace / "lyrics.txt"
+
+
+def _lyrics_target_path(workspace: Path, lines: list[dict[str, Any]]) -> Path:
+    active = _lyrics_active_path(workspace)
+    if active.exists():
+        return active
+    return workspace / ("lyrics.lrc" if _content_has_timestamps(lines) else "lyrics.txt")
+
+
+def _parse_lyric_lines(content: str) -> list[dict[str, Any]]:
+    parsed: list[dict[str, Any]] = []
+    lrc_pattern = re.compile(r"^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)$")
+    for index, raw_line in enumerate(content.splitlines(), 1):
+        raw = raw_line.rstrip("\n")
+        timestamp = None
+        text = raw
+        match = lrc_pattern.match(raw.strip())
+        if match:
+            minute, second, fraction, text = match.groups()
+            fraction = (fraction or "000").ljust(3, "0")[:3]
+            timestamp = f"{int(minute):02d}:{int(second):02d}.{fraction}"
+            text = text.strip()
+        line_type = _lyric_line_type(text)
+        parsed.append(
+            {
+                "id": f"line_{index:04d}",
+                "index": index,
+                "type": line_type,
+                "text": text,
+                "timestamp": timestamp,
+                "raw": raw,
+            }
+        )
+    if not parsed:
+        parsed.append({"id": "line_0001", "index": 1, "type": "lyric", "text": "", "timestamp": None, "raw": ""})
+    return parsed
+
+
+def _lyrics_lines_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    if isinstance(payload.get("lines"), list):
+        lines = []
+        for index, line in enumerate(payload["lines"], 1):
+            text = str(line.get("text") or "")
+            timestamp = line.get("timestamp") or None
+            line_type = str(line.get("type") or _lyric_line_type(text))
+            lines.append(
+                {
+                    "id": str(line.get("id") or f"line_{index:04d}"),
+                    "index": index,
+                    "type": line_type,
+                    "text": text,
+                    "timestamp": str(timestamp) if timestamp else None,
+                    "raw": str(line.get("raw") or text),
+                }
+            )
+        return lines
+    return _parse_lyric_lines(str(payload.get("text") or ""))
+
+
+def _render_lyrics_lines(lines: list[dict[str, Any]]) -> str:
+    rendered = []
+    has_timestamps = _content_has_timestamps(lines)
+    for line in lines:
+        text = str(line.get("text") or "").strip()
+        timestamp = line.get("timestamp")
+        if has_timestamps and timestamp:
+            rendered.append(f"[{timestamp}]{text}")
+        else:
+            rendered.append(text)
+    return "\n".join(rendered).rstrip() + "\n"
+
+
+def _content_has_timestamps(lines: list[dict[str, Any]]) -> bool:
+    return any(bool(line.get("timestamp")) for line in lines)
+
+
+def _lyric_line_type(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return "note"
+    if re.match(r"^\[[^\]]+\]$", cleaned):
+        return "section_label"
+    if "instrumental" in cleaned.lower():
+        return "instrumental"
+    return "lyric"
+
+
+def _lyrics_warnings(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    seen: dict[str, list[int]] = {}
+    for line in lines:
+        text = str(line.get("text") or "").strip()
+        line_id = line.get("id")
+        index = line.get("index")
+        line_type = line.get("type")
+        if line_type == "lyric" and not text:
+            warnings.append({"lineId": line_id, "index": index, "severity": "warning", "message": "Empty lyric line"})
+        if line_type == "lyric" and len(text) > 90:
+            warnings.append({"lineId": line_id, "index": index, "severity": "warning", "message": "Very long lyric line"})
+        if line_type == "lyric" and 0 < len(text) < 3:
+            warnings.append({"lineId": line_id, "index": index, "severity": "info", "message": "Very short lyric line"})
+        if line_type == "section_label":
+            warnings.append({"lineId": line_id, "index": index, "severity": "info", "message": "Section label"})
+        normalized = re.sub(r"\s+", " ", text.lower())
+        if line_type == "lyric" and normalized:
+            seen.setdefault(normalized, []).append(int(index))
+
+    for indexes in seen.values():
+        if len(indexes) > 1:
+            for index in indexes:
+                line = lines[index - 1]
+                warnings.append(
+                    {
+                        "lineId": line.get("id"),
+                        "index": index,
+                        "severity": "info",
+                        "message": "Repeated lyric line",
+                    }
+                )
+    return warnings
+
+
+def _backup_file_version(project_id: str, path: Path, approved: bool, notes: str) -> Path | None:
+    if not path.exists():
+        return None
+    workspace = _workspace_path(project_id, None)
+    row = _song_row(project_id)
+    if row is not None:
+        workspace = _workspace_path(project_id, row["workspace_dir"])
+    version_dir = workspace / "lyrics" / "versions"
+    version_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    version_path = version_dir / f"{path.stem}_{stamp}{path.suffix}"
+    version_path.write_text(path.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO lyrics_versions
+                (project_id, file_path, version_label, notes, is_approved)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                project_id,
+                str(version_path),
+                ("approved" if approved else "backup") + f"-{stamp}",
+                notes,
+                1 if approved else 0,
+            ),
+        )
+        conn.commit()
+    return version_path
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.tmp")
+    tmp_path.write_text(content, encoding="utf-8")
+    os.replace(tmp_path, path)
 
 
 def _record_event(project_id: str | None, event_type: str, message: str) -> None:

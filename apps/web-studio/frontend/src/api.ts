@@ -1,4 +1,4 @@
-import type { DashboardPayload, LogItem, ProjectDetail, ProjectSummary } from "./types";
+import type { DashboardPayload, LogItem, LyricLine, LyricsPayload, ProjectDetail, ProjectSummary } from "./types";
 
 const apiBase = window.location.port === "5173" ? "http://127.0.0.1:8765" : "";
 
@@ -47,6 +47,24 @@ export function runProjectAction(projectId: string, action: string, target?: str
   });
 }
 
+export function fetchLyrics(projectId: string): Promise<LyricsPayload> {
+  return request<LyricsPayload>(`/api/projects/${encodeURIComponent(projectId)}/lyrics`);
+}
+
+export function saveLyrics(projectId: string, lines: LyricLine[], draft: boolean): Promise<LyricsPayload> {
+  return request<LyricsPayload>(`/api/projects/${encodeURIComponent(projectId)}/lyrics?draft=${draft ? "true" : "false"}`, {
+    method: "PUT",
+    body: JSON.stringify({ lines }),
+  });
+}
+
+export function approveLyrics(projectId: string, lines: LyricLine[]): Promise<LyricsPayload> {
+  return request<LyricsPayload>(`/api/projects/${encodeURIComponent(projectId)}/lyrics/approve`, {
+    method: "POST",
+    body: JSON.stringify({ lines }),
+  });
+}
+
 export function stageNextProject(): Promise<ProjectDetail> {
   return request<ProjectDetail>("/api/queue/stage-next", {
     method: "POST",
@@ -60,4 +78,3 @@ export function fetchCharts(payload: { limit: number; country: string; force?: b
     body: JSON.stringify(payload),
   });
 }
-
