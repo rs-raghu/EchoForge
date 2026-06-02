@@ -74,13 +74,18 @@ def action_key_for_state(raw_state: str, target_state: str | None = None) -> str
         return "stage"
     if raw_state in {"STAGED", "PAUSED"}:
         return "run_full"
+    if raw_state == "AUDIO_FETCHED":
+        return "fetch_lyrics"
     if raw_state == "LYRICS_REVIEW_PENDING":
         return "approve_lyrics"
-    if raw_state == "ASSETS_READY" and target_state == "ASSETS_READY":
-        return "continue_video"
+    if raw_state == "LYRICS_APPROVED":
+        return "assets_only"
+    if raw_state == "ASSETS_READY":
+        return "render_preview" if target_state == "ASSETS_READY" else "continue_video"
     if raw_state == "PREVIEW_PENDING":
-        return "approve_video"
+        return "render_final"
+    if raw_state == "VIDEO_APPROVED":
+        return "upload_youtube"
     if raw_state == "FAILED":
         return "retry"
     return None
-

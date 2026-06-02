@@ -47,7 +47,12 @@ const navItems: Array<{ key: ViewKey; label: string }> = [
 const primaryLabels: Record<string, string> = {
   stage: "Stage",
   run_full: "Run Full",
+  fetch_lyrics: "Fetch Lyrics",
   approve_lyrics: "Approve Lyrics",
+  assets_only: "Build Assets",
+  render_preview: "Render Preview",
+  render_final: "Render Final",
+  upload_youtube: "Upload",
   approve_sync: "Approve Sync",
   continue_video: "Continue",
   approve_video: "Approve Upload",
@@ -667,7 +672,12 @@ function ProjectDetailPanel({
             </button>
           ) : null}
           {project.rawState === "STAGED" || project.rawState === "PAUSED" ? (
-            <button className="button" onClick={() => void onAction(project, "assets_only", "ASSETS_READY")} type="button">
+            <button
+              className="button"
+              disabled={busyKey === `${project.id}:assets_only`}
+              onClick={() => void onAction(project, "assets_only", "ASSETS_READY")}
+              type="button"
+            >
               Assets Only
             </button>
           ) : null}

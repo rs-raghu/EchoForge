@@ -406,17 +406,21 @@ def run_project_action(project_id: str, action: str, payload: dict[str, Any] | N
 
     elif action in {"run_full", "run-full"}:
         _resume_if_paused_or_discovered(project_id, song)
-        db_manager.set_target_state(project_id, "PUBLISHED")
-        _record_event(project_id, "pipeline_started", "Pipeline target set to PUBLISHED")
+        _start_pipeline_job(project_id, "VIDEO_APPROVED")
+        _record_event(project_id, "pipeline_started", "Full local pipeline queued")
 
     elif action in {"assets_only", "assets-only"}:
         _resume_if_paused_or_discovered(project_id, song)
-        db_manager.set_target_state(project_id, "ASSETS_READY")
-        _record_event(project_id, "pipeline_started", "Pipeline target set to ASSETS_READY")
+        _start_pipeline_job(project_id, "ASSETS_READY")
+        _record_event(project_id, "pipeline_started", "Assets-only pipeline queued")
 
     elif action in {"continue_video", "continue-video"}:
-        db_manager.set_target_state(project_id, "PUBLISHED")
-        _record_event(project_id, "video_continued", "Final render/upload flow resumed")
+        _start_pipeline_job(project_id, "VIDEO_APPROVED")
+        _record_event(project_id, "video_continued", "Video render flow queued")
+
+    elif action in {"download_audio", "fetch_lyrics", "auto_sync", "render_preview", "render_final", "upload_youtube"}:
+        start_project_job(project_id, action, payload)
+        _record_event(project_id, "job_action_started", f"{action.replace('_', ' ')} queued")
 
     elif action in {"approve_lyrics", "approve-lyrics"}:
         _backup_lyrics_if_present(project_id, song)
@@ -881,6 +885,26 @@ def start_project_job(project_id: str, job_type: str, payload: dict[str, Any] | 
     job_id = _insert_job(project_id, job_type, "queued", 0, message, log_path=str(workspace / "logs"))
     _start_job_thread(job_id, project_id, job_type, payload)
     _record_event(project_id, "job_queued", message)
+    return get_job(job_id)
+
+
+def _start_pipeline_job(project_id: str, target_state: str) -> dict[str, Any]:
+    row = _song_row(project_id)
+    if row is None:
+        raise KeyError(project_id)
+    target_state = "ASSETS_READY" if target_state == "ASSETS_READY" else "VIDEO_APPROVED"
+    workspace = _ensure_workspace(project_id, row["workspace_dir"])
+    db_manager.set_target_state(project_id, target_state)
+    job_type = "assets_pipeline" if target_state == "ASSETS_READY" else "full_pipeline"
+    job_id = _insert_job(
+        project_id,
+        job_type,
+        "queued",
+        0,
+        "Pipeline queued",
+        log_path=str(workspace / "logs"),
+    )
+    _start_job_thread(job_id, project_id, job_type, {"targetState": target_state})
     return get_job(job_id)
 
 
@@ -1848,6 +1872,19 @@ def _execute_project_job(
 ) -> tuple[bool, str, str]:
     from echoforge.engine.workers import ai_sync, fetch_audio, fetch_lyrics, render_video, youtube_upload
 
+    if job_type in {"assets_pipeline", "full_pipeline"}:
+        target_state = "ASSETS_READY" if job_type == "assets_pipeline" else "VIDEO_APPROVED"
+        return _execute_pipeline_job(
+            job_id,
+            project_id,
+            song,
+            target_state,
+            fetch_audio,
+            fetch_lyrics,
+            ai_sync,
+            render_video,
+        )
+
     if job_type == "download_audio":
         db_manager.update_state(project_id, macro="STAGED", micro="DOWNLOADING_AUDIO")
         _set_job_fields(job_id, progress=20, message="Downloading audio")
@@ -1889,6 +1926,87 @@ def _execute_project_job(
         return ok, "PUBLISHED", "Video uploaded" if ok else "YouTube upload failed"
 
     raise ValueError(f"Unknown job type: {job_type}")
+
+
+def _execute_pipeline_job(
+    job_id: int,
+    project_id: str,
+    song: dict[str, Any],
+    target_state: str,
+    fetch_audio_module: Any,
+    fetch_lyrics_module: Any,
+    ai_sync_module: Any,
+    render_video_module: Any,
+) -> tuple[bool, str, str]:
+    workspace = Path(str(song.get("workspace_dir") or _ensure_workspace(project_id)))
+    target_state = "ASSETS_READY" if target_state == "ASSETS_READY" else "VIDEO_APPROVED"
+
+    def refresh_song() -> dict[str, Any]:
+        current = db_manager.get_song(project_id) or song
+        current["workspace_dir"] = str(workspace)
+        return current
+
+    flags = _workspace_flags(workspace)
+    if not flags["audio"]:
+        db_manager.update_state(project_id, macro="STAGED", micro="DOWNLOADING_AUDIO")
+        _set_job_fields(job_id, progress=12, message="Downloading audio")
+        if not fetch_audio_module.download(refresh_song()):
+            return False, "FAILED", "Audio download failed"
+        flags = _workspace_flags(workspace)
+        db_manager.update_state(project_id, macro="AUDIO_FETCHED", micro="IDLE")
+
+    if not flags["lyrics"]:
+        db_manager.update_state(project_id, macro="AUDIO_FETCHED", micro="FETCHING_LYRICS")
+        _set_job_fields(job_id, progress=28, message="Fetching lyrics")
+        if not fetch_lyrics_module.fetch(refresh_song()):
+            return False, "FAILED", "Lyrics fetch failed"
+        flags = _workspace_flags(workspace)
+        db_manager.update_state(project_id, macro="LYRICS_REVIEW_PENDING", micro="IDLE")
+        return True, "LYRICS_REVIEW_PENDING", "Lyrics ready for review"
+
+    current_state = (db_manager.get_song(project_id) or {}).get("current_macro_state") or "STAGED"
+    if current_state == "LYRICS_REVIEW_PENDING":
+        _set_job_fields(job_id, progress=42, message="Waiting for lyrics approval")
+        return True, "LYRICS_REVIEW_PENDING", "Approve lyrics to continue"
+
+    approved_states = {"LYRICS_APPROVED", "ASSETS_READY", "PREVIEW_PENDING", "VIDEO_APPROVED", "PUBLISHED"}
+    if current_state not in approved_states and not flags["timestamps"]:
+        db_manager.update_state(project_id, macro="LYRICS_REVIEW_PENDING", micro="IDLE")
+        _set_job_fields(job_id, progress=42, message="Waiting for lyrics approval")
+        return True, "LYRICS_REVIEW_PENDING", "Approve lyrics to continue"
+
+    if not flags["timestamps"]:
+        db_manager.update_state(project_id, macro="LYRICS_APPROVED", micro="RUNNING_AI_SYNC")
+        _set_job_fields(job_id, progress=55, message="Generating sync timings")
+        if not ai_sync_module.process(refresh_song()):
+            return False, "FAILED", "Sync generation failed"
+        flags = _workspace_flags(workspace)
+        db_manager.update_state(project_id, macro="ASSETS_READY", micro="IDLE")
+
+    if target_state == "ASSETS_READY":
+        _set_job_fields(job_id, progress=90, message="Assets ready")
+        return True, "ASSETS_READY", "Assets ready"
+
+    if not flags["design"]:
+        _set_job_fields(job_id, progress=68, message="Saving default design")
+        save_project_design(project_id, {})
+        flags = _workspace_flags(workspace)
+
+    if not flags["preview"]:
+        db_manager.update_state(project_id, macro="ASSETS_READY", micro="RENDERING_PREVIEW")
+        _set_job_fields(job_id, progress=76, message="Rendering preview")
+        if not render_video_module.render(refresh_song(), mode="preview"):
+            return False, "FAILED", "Preview render failed"
+        flags = _workspace_flags(workspace)
+        db_manager.update_state(project_id, macro="PREVIEW_PENDING", micro="IDLE")
+
+    if not flags["final"]:
+        db_manager.update_state(project_id, macro="ASSETS_READY", micro="RENDERING_FINAL")
+        _set_job_fields(job_id, progress=88, message="Rendering final video")
+        if not render_video_module.render(refresh_song(), mode="final"):
+            return False, "FAILED", "Final render failed"
+
+    return True, "VIDEO_APPROVED", "Final video ready for upload"
 
 
 def _record_upload_success(project_id: str, song: dict[str, Any]) -> None:
@@ -1944,6 +2062,8 @@ def _finish_cancelled_job(job_id: int, project_id: str) -> None:
 
 def _job_running_message(job_type: str) -> str:
     labels = {
+        "assets_pipeline": "Preparing asset pipeline",
+        "full_pipeline": "Preparing full pipeline",
         "download_audio": "Preparing audio download",
         "fetch_lyrics": "Preparing lyrics fetch",
         "auto_sync": "Preparing sync",
