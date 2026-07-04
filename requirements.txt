@@ -1,5 +1,3 @@
-# EchoForge Web Studio Python dependencies
-
 # Core
 python-dotenv>=1.0.0
 
