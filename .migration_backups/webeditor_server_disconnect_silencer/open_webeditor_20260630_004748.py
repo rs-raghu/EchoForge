@@ -1,0 +1,194 @@
+from __future__ import annotations
+
+import argparse
+import json
+import mimetypes
+import shutil
+import sys
+import webbrowser
+from datetime import datetime
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = ROOT_DIR / "src"
+WEB_DIR = ROOT_DIR / "apps" / "webeditor"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from echoforge.stages.renderer.editor_project_v2 import make_v2_project, read_json, write_json, now_iso
+
+PROJECT_DIR: Path
+
+
+def safe_join(base: Path, rel: str) -> Path:
+    rel = unquote(rel).replace("\\", "/").lstrip("/")
+    path = (base / rel).resolve()
+    base_resolved = base.resolve()
+    if path != base_resolved and base_resolved not in path.parents:
+        raise ValueError("Unsafe path")
+    return path
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "EchoForgeWebEditorV3/1.0"
+
+    def log_message(self, fmt: str, *args):
+        return
+
+    def send_json(self, data, status=200):
+        raw = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def send_text(self, text: str, status=200, content_type="text/plain; charset=utf-8"):
+        raw = text.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def send_file(self, path: Path):
+        if not path.exists() or not path.is_file():
+            self.send_text("Not found", status=404)
+            return
+
+        ctype = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        size = path.stat().st_size
+        range_header = self.headers.get("Range")
+
+        if range_header and range_header.startswith("bytes="):
+            try:
+                spec = range_header.replace("bytes=", "", 1).split(",", 1)[0].strip()
+                start_s, end_s = spec.split("-", 1)
+                if start_s == "":
+                    length = int(end_s)
+                    start = max(0, size - length)
+                    end = size - 1
+                else:
+                    start = int(start_s)
+                    end = int(end_s) if end_s else size - 1
+                start = max(0, min(start, size - 1))
+                end = max(start, min(end, size - 1))
+                length = end - start + 1
+                self.send_response(206)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+                self.send_header("Content-Length", str(length))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                with path.open("rb") as f:
+                    f.seek(start)
+                    remaining = length
+                    while remaining > 0:
+                        chunk = f.read(min(1024 * 1024, remaining))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        remaining -= len(chunk)
+                return
+            except Exception:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.end_headers()
+                return
+
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(size))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        with path.open("rb") as f:
+            shutil.copyfileobj(f, self.wfile)
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path == "/":
+            return self.send_file(WEB_DIR / "index.html")
+        if path == "/api/project":
+            result = make_v2_project(PROJECT_DIR, force=False)
+            data = read_json(PROJECT_DIR / "editor" / "editor_project.json", {})
+            data["_server"] = {"prepare_result": result, "project_dir": str(PROJECT_DIR)}
+            return self.send_json(data)
+        if path.startswith("/media/"):
+            try:
+                return self.send_file(safe_join(PROJECT_DIR, path[len("/media/") :]))
+            except Exception as exc:
+                return self.send_json({"ok": False, "error": str(exc)}, status=400)
+        if path.startswith("/root/"):
+            try:
+                return self.send_file(safe_join(ROOT_DIR, path[len("/root/") :]))
+            except Exception as exc:
+                return self.send_json({"ok": False, "error": str(exc)}, status=400)
+        try:
+            rel = path.lstrip("/") or "index.html"
+            return self.send_file(safe_join(WEB_DIR, rel))
+        except Exception as exc:
+            return self.send_json({"ok": False, "error": str(exc)}, status=400)
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path != "/api/project":
+            return self.send_json({"ok": False, "error": "Unknown endpoint"}, status=404)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length).decode("utf-8")
+            data = json.loads(body)
+            if data.get("schema") != "echoforge.webeditor.v2":
+                return self.send_json({"ok": False, "error": "Invalid editor schema"}, status=400)
+            editor_path = PROJECT_DIR / "editor" / "editor_project.json"
+            backup_dir = PROJECT_DIR / "editor" / "backups"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            if editor_path.exists():
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                shutil.copy2(editor_path, backup_dir / f"{stamp}_editor_project.json")
+            data["updated_at"] = now_iso()
+            write_json(editor_path, data)
+            return self.send_json({"ok": True, "saved": str(editor_path)})
+        except Exception as exc:
+            return self.send_json({"ok": False, "error": str(exc)}, status=500)
+
+
+def main():
+    global PROJECT_DIR
+    parser = argparse.ArgumentParser(description="Open EchoForge WebEditor V3.")
+    parser.add_argument("--project", required=True, help="Project directory.")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8787)
+    parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--force-v2", action="store_true", help="Rebuild editor_project.json before opening.")
+    args = parser.parse_args()
+
+    PROJECT_DIR = Path(args.project).resolve()
+    if not PROJECT_DIR.exists():
+        raise SystemExit(f"Project not found: {PROJECT_DIR}")
+
+    prep = make_v2_project(PROJECT_DIR, force=args.force_v2)
+    print(json.dumps(prep, indent=2, ensure_ascii=False))
+
+    url = f"http://{args.host}:{args.port}/"
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"\nEchoForge WebEditor V3 running at {url}")
+    print("Keep this terminal open. Press Ctrl+C to stop.\n")
+    if not args.no_browser:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopping WebEditor...")
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

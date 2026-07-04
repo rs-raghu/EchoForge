@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.local
+
+# Node
+node_modules/
+dist/
+build/
+
+# Runtime data
+data/**/*.sqlite3
+data/**/*.db
+data/**/*.json
+data/**/*.log
+
+# Generated projects
+projects/*
+!projects/.gitkeep
+
+# App runtime state
+storage/
+Storage/
+
+# Secrets
+youtube_token.json
+client_secret*.json
+token*.json
+
+# Media/generated files
+*.mp4
+*.m4a
+*.mp3
+*.wav
+*.webm
+*.jpg
+*.jpeg
+*.png
+*.ass
+*.srt
+*.lrc
+
+# Keep placeholders
+!.gitkeep
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+data/songscout/*.sqlite3
+data/songscout/debug_latest_page.html
+data/songscout/debug_latest_text.txt
+data/songscout/debug_latest_page.png
+
+data/app_state/*.json

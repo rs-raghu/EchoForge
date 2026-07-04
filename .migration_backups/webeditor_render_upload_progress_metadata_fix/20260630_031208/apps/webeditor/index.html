@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>EchoForge WebEditor V3</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/style.css" />
+
+<style id="ef-render-single-job-css">
+/* Keep layout untouched; only prevent duplicate Render clicks while a job is active. */
+body.ef-rendering #efRenderUploadBtn,
+body.ef-rendering #efRuStart,
+body.ef-rendering #efRuRenderOnly {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+body.ef-rendering .ef-ru-actions::after {
+  content: "Rendering is running...";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.14);
+  color: #e5e7eb;
+  background: rgba(255,255,255,.06);
+  font-weight: 800;
+}
+</style>
+
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo-dot"></div>
+        <div>
+          <div class="brand-title">EchoForge WebEditor</div>
+          <div class="brand-subtitle" id="projectTitle">Loading project...</div>
+        </div>
+      </div>
+
+      <div class="shortcut-strip">
+        <span><b>Space</b> Play</span>
+        <span><b>Drag red head</b> Scrub</span>
+        <span><b>S</b> Split</span>
+        <span><b>T</b> Text</span>
+        <span><b>Del</b> Delete</span>
+        <span><b>F</b> Fullscreen</span>
+        <span><b>Ctrl+A</b> Lyrics</span>
+      </div>
+
+      <div class="top-actions">
+        <button id="btnUndo" title="Ctrl+Z">Undo</button>
+        <button id="btnRedo" title="Ctrl+Y">Redo</button>
+        <button id="btnSelectAllLyrics" title="Ctrl+A">Select lyrics</button>
+        <button id="btnSave" class="primary" title="Ctrl+S">Save</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="editor-main">
+        <section id="viewerShell" class="viewer-shell">
+          <div class="viewer-top">
+            <span id="timeReadout">00:00.000 / 00:00.000</span>
+            <span id="statusText">Ready</span>
+            <button id="btnFullscreen" title="F">Fullscreen</button>
+          </div>
+
+          <div id="viewer" class="viewer">
+            <img id="backgroundImg" class="background-img" alt="Background" />
+            <div id="lyricOverlay" class="lyric-overlay"></div>
+            <div id="selectedBox" class="selected-box hidden"></div>
+          </div>
+
+          <div class="transport">
+            <button id="btnStart" title="Home">|◀</button>
+            <button id="btnBack" title="Left arrow">−1s</button>
+            <button id="btnPlay" class="play">▶</button>
+            <button id="btnForward" title="Right arrow">+1s</button>
+            <button id="btnEnd" title="End">▶|</button>
+            <input id="masterSeek" type="range" min="0" max="10000" value="0" />
+          </div>
+
+          <audio id="audio" preload="metadata"></audio>
+        </section>
+
+        <section class="timeline-shell">
+          <div class="timeline-header">
+            <div class="timeline-left-title">Timeline</div>
+            <div class="timeline-top-tools">
+              <span id="selectionStatus">0 selected</span>
+              <label>Zoom <input id="zoomSlider" type="range" min="4" max="36" value="12" /></label>
+            </div>
+          </div>
+
+          <div class="timeline-body">
+            <div class="track-labels" id="trackLabels"></div>
+            <div class="tracks-viewport" id="tracksViewport">
+              <div id="timelineContent" class="timeline-content">
+                <div id="ruler" class="ruler"></div>
+                <div id="tracks" class="tracks"></div>
+                <div id="playhead" class="playhead" title="Drag to scrub"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <aside class="right-panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Inspector</div>
+            <div class="panel-subtitle" id="infoSelected">No clip selected</div>
+          </div>
+        </div>
+
+        <label>Text</label>
+        <textarea id="clipText" rows="4" placeholder="Select a text clip"></textarea>
+
+        <div class="grid2">
+          <div>
+            <label>Start</label>
+            <input id="clipStart" type="number" step="0.01" />
+          </div>
+          <div>
+            <label>End</label>
+            <input id="clipEnd" type="number" step="0.01" />
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div>
+            <label>X</label>
+            <input id="clipX" type="number" step="1" />
+          </div>
+          <div>
+            <label>Y</label>
+            <input id="clipY" type="number" step="1" />
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div>
+            <label>Width</label>
+            <input id="clipWidth" type="number" step="1" />
+          </div>
+          <div>
+            <label>Font size</label>
+            <input id="fontSize" type="number" step="1" />
+          </div>
+        </div>
+
+        <label>Font</label>
+        <select id="fontFamily">
+          <option value="Bernier">Bernier</option>
+          <option value="Arial">Arial</option>
+          <option value="Impact">Impact</option>
+          <option value="Georgia">Georgia</option>
+        </select>
+
+        <label>Color</label>
+        <input id="fontColor" type="color" />
+
+        <div class="inspector-note">
+          Changes apply instantly to selected lyric clips. Ctrl-click timeline clips to multi-select, or use Select lyrics in the top bar.
+        </div>
+
+        <div class="panel-title mt">Project</div>
+        <div class="info-row"><span>Duration</span><b id="infoDuration">--</b></div>
+        <div class="info-row"><span>Font</span><b id="fontStatus">Checking...</b></div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+
+<!-- ECHOFORGE_STAGE3_RENDER_UPLOAD_UI_START -->
+<style>
+.ef-render-upload-button{position:static!important;top:auto!important;right:auto!important;bottom:auto!important;left:auto!important;z-index:auto!important;border:1px solid rgba(255,255,255,.18);background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font-weight:800;border-radius:10px;padding:8px 11px;box-shadow:none;cursor:pointer;white-space:nowrap;min-width:auto}.ef-render-upload-button:hover{filter:brightness(1.08)}.ef-ru-backdrop{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(3,7,18,.72);z-index:99998}.ef-ru-backdrop.open{display:flex}.ef-ru-modal{width:min(760px,calc(100vw - 28px));max-height:calc(100vh - 28px);overflow:auto;border:1px solid rgba(255,255,255,.14);background:#101827;color:#e5e7eb;border-radius:18px;box-shadow:0 26px 90px rgba(0,0,0,.45);font-family:system-ui,-apple-system,Segoe UI,sans-serif}.ef-ru-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.1)}.ef-ru-head h2{margin:0;font-size:18px}.ef-ru-body{padding:16px 18px;display:grid;gap:12px}.ef-ru-row{display:grid;gap:7px}.ef-ru-row label{color:#aeb8c9;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}.ef-ru-row input,.ef-ru-row textarea,.ef-ru-row select{width:100%;box-sizing:border-box;background:#0b1220;color:#e5e7eb;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px 11px;outline:none}.ef-ru-row textarea{min-height:95px;resize:vertical}.ef-ru-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.ef-ru-actions{display:flex;justify-content:flex-end;gap:10px;padding:14px 18px 18px;border-top:1px solid rgba(255,255,255,.1)}.ef-ru-actions button{border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:10px 13px;cursor:pointer;background:#182235;color:#e5e7eb;font-weight:700}.ef-ru-actions .primary{background:linear-gradient(135deg,#16a34a,#2563eb);color:#fff}.ef-ru-progress{display:none;margin-top:10px;padding:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);border-radius:12px}.ef-ru-progress.open{display:block}.ef-ru-bar{height:10px;background:rgba(255,255,255,.1);border-radius:999px;overflow:hidden}.ef-ru-bar>div{height:100%;width:0%;background:linear-gradient(90deg,#22c55e,#3b82f6);transition:width .25s ease}.ef-ru-log{white-space:pre-wrap;max-height:180px;overflow:auto;margin-top:10px;color:#cbd5e1;font-size:12px;line-height:1.45}.ef-ru-small{color:#94a3b8;font-size:12px}.ef-ru-close{background:transparent!important;color:#cbd5e1}
+</style>
+<button class="ef-render-upload-button" id="efRenderUploadBtn">Render & Upload</button>
+<div class="ef-ru-backdrop" id="efRenderUploadModal"><div class="ef-ru-modal"><div class="ef-ru-head"><h2>Render & Upload</h2><button class="ef-ru-close" id="efRenderUploadClose">✕</button></div><div class="ef-ru-body"><div class="ef-ru-small">Auto-saves, renders, then uploads to YouTube if credentials are configured.</div><div class="ef-ru-grid"><div class="ef-ru-row"><label>Visibility</label><select id="efRuVisibility"><option value="private">Private</option><option value="public">Public</option><option value="unlisted">Unlisted</option><option value="schedule">Schedule</option></select></div><div class="ef-ru-row" id="efRuScheduleRow" style="display:none"><label>Schedule date & time</label><input id="efRuScheduleAt" type="datetime-local"></div></div><div class="ef-ru-row"><label>Title</label><input id="efRuTitle" placeholder="Auto title if empty"></div><div class="ef-ru-row"><label>Description</label><textarea id="efRuDescription" placeholder="Auto description if empty"></textarea></div><div class="ef-ru-grid"><div class="ef-ru-row"><label>Tags</label><input id="efRuTags" placeholder="lyrics, lyric video, music"></div><div class="ef-ru-row"><label>FPS</label><select id="efRuFps"><option value="24">24 fps</option><option value="30">30 fps</option></select></div></div><div class="ef-ru-progress" id="efRuProgress"><div class="ef-ru-small" id="efRuStatusText">Queued...</div><div class="ef-ru-bar"><div id="efRuProgressBar"></div></div><div class="ef-ru-log" id="efRuLog"></div></div></div><div class="ef-ru-actions"><button id="efRuRenderOnly">Render Only</button><button class="primary" id="efRuStart">Render & Upload</button></div></div></div>
+<script>(function(){const $=id=>document.getElementById(id),btn=$('efRenderUploadBtn'),modal=$('efRenderUploadModal'),close=$('efRenderUploadClose'),vis=$('efRuVisibility'),schRow=$('efRuScheduleRow'),sch=$('efRuScheduleAt'),box=$('efRuProgress'),st=$('efRuStatusText'),bar=$('efRuProgressBar'),log=$('efRuLog');btn.onclick=()=>modal.classList.add('open');close.onclick=()=>modal.classList.remove('open');modal.onclick=e=>{if(e.target===modal)modal.classList.remove('open')};vis.onchange=()=>schRow.style.display=vis.value==='schedule'?'grid':'none';async function save(){try{for(const n of ['saveProject','saveEditorProject','saveState'])if(typeof window[n]==='function'){await window[n]();return}const b=[...document.querySelectorAll('button')].find(x=>/save/i.test((x.textContent||'').trim()));if(b){b.click();await new Promise(r=>setTimeout(r,500))}}catch(e){console.warn(e)}}function opts(upload){let s=sch.value||null;if(vis.value==='schedule'&&s)s=new Date(s).toISOString();return{upload,visibility:vis.value,scheduleAt:vis.value==='schedule'?s:null,title:$('efRuTitle').value||null,description:$('efRuDescription').value||null,tags:$('efRuTags').value||null,fps:Number($('efRuFps').value||24),crf:20}}async function start(upload){box.classList.add('open');log.textContent='';st.textContent='Saving...';bar.style.width='1%';await save();st.textContent=upload?'Starting render and upload...':'Starting render...';const res=await fetch('/api/render/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(opts(upload))});const data=await res.json();if(!data.ok){st.textContent='Failed';log.textContent=JSON.stringify(data,null,2);return}poll(data.job_id)}async function poll(id){let done=false;while(!done){await new Promise(r=>setTimeout(r,1000));const job=await(await fetch('/api/render/status?job_id='+encodeURIComponent(id))).json();const p=Math.max(0,Math.min(1,Number(job.progress||0)));bar.style.width=Math.round(p*100)+'%';st.textContent=`${job.status||'running'} · ${job.stage||''} · ${Math.round(p*100)}%`;if(Array.isArray(job.logs)){log.textContent=job.logs.map(x=>`[${x.time||''}] ${x.message||''}`).join('\n');log.scrollTop=log.scrollHeight}if(['completed','failed','upload_failed'].includes(job.status)){done=true;if(job.youtube&&job.youtube.url)log.textContent+='\n\nYouTube URL: '+job.youtube.url;if(job.output)log.textContent+='\n\nRendered video: '+job.output;if(job.reason)log.textContent+='\n\nReason: '+job.reason}}}document.getElementById('efRuStart').onclick=()=>start(true);document.getElementById('efRuRenderOnly').onclick=()=>start(false)})();</script>
+<!-- ECHOFORGE_STAGE3_RENDER_UPLOAD_UI_END -->
+
+<script id="ef-render-button-layout-fix">
+(function(){
+  function placeRenderButton(){
+    const btn = document.getElementById('efRenderUploadBtn');
+    const topActions = document.querySelector('.top-actions');
+    const saveBtn = document.getElementById('btnSave');
+    if (!btn || !topActions) return;
+
+    // Keep the working Render & Upload modal/logic, but place the trigger inside
+    // the normal top action row so it does not float over Select lyrics / Save.
+    if (btn.parentElement !== topActions) {
+      topActions.insertBefore(btn, saveBtn || null);
+    }
+    btn.textContent = 'Render';
+    btn.title = 'Render & Upload';
+    btn.setAttribute('aria-label', 'Render and upload');
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', placeRenderButton);
+  } else {
+    placeRenderButton();
+  }
+  // Some patches append UI after load; run once more safely.
+  setTimeout(placeRenderButton, 250);
+})();
+</script>
+
+<script id="ef-render-single-job-guard">
+(function(){
+  let renderBusy = false;
+  const DONE = /\b(completed|failed|upload_failed|cancelled)\b/i;
+
+  function byId(id){ return document.getElementById(id); }
+  function actionButtons(){ return [byId('efRenderUploadBtn'), byId('efRuStart'), byId('efRuRenderOnly')].filter(Boolean); }
+  function setBusy(on){
+    renderBusy = !!on;
+    document.body.classList.toggle('ef-rendering', renderBusy);
+    actionButtons().forEach(btn => {
+      btn.disabled = renderBusy;
+      btn.setAttribute('aria-busy', renderBusy ? 'true' : 'false');
+      if (renderBusy) btn.setAttribute('data-render-disabled', '1');
+      else btn.removeAttribute('data-render-disabled');
+    });
+  }
+
+  // Capture phase: block accidental second clicks before older onclick handlers run.
+  document.addEventListener('click', function(ev){
+    const action = ev.target && ev.target.closest && ev.target.closest('#efRuStart,#efRuRenderOnly');
+    if (!action) return;
+    if (renderBusy) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      return false;
+    }
+    setBusy(true);
+  }, true);
+
+  // Render top button only opens the modal. During a running job, keep it hidden/blocked.
+  document.addEventListener('click', function(ev){
+    const trigger = ev.target && ev.target.closest && ev.target.closest('#efRenderUploadBtn');
+    if (!trigger || !renderBusy) return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    return false;
+  }, true);
+
+  function watchStatus(){
+    const st = byId('efRuStatusText');
+    const log = byId('efRuLog');
+    const text = ((st && st.textContent) || '') + '\n' + ((log && log.textContent) || '');
+    if (renderBusy && DONE.test(text)) setBusy(false);
+    // If fetch/start failed before polling, older script writes "Failed" into status.
+    if (renderBusy && /\bFailed\b/i.test(text)) setBusy(false);
+  }
+  setInterval(watchStatus, 700);
+  window.EchoForgeRenderBusy = () => renderBusy;
+})();
+</script>
+
+
+<script id="echoforge-render-upload-metadata-integration">
+(() => {
+  if (window.__ECHOFORGE_RENDER_UPLOAD_METADATA_INTEGRATION__) return;
+  window.__ECHOFORGE_RENDER_UPLOAD_METADATA_INTEGRATION__ = true;
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function api(path, body = null) {
+    const options = body
+      ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      : { method: "GET" };
+    const res = await fetch(path, options);
+    const text = await res.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch { data = { ok: false, error: text }; }
+    if (!res.ok || data.ok === false) {
+      throw new Error(data.error || data.reason || `HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  function findButtonsByText(pattern) {
+    return Array.from(document.querySelectorAll("button"))
+      .filter((btn) => pattern.test((btn.textContent || "").trim()));
+  }
+
+  async function triggerSave() {
+    if (typeof window.saveProject === "function") {
+      try { await window.saveProject(); return; } catch {}
+    }
+    const saveBtn = findButtonsByText(/^save$/i)[0] || findButtonsByText(/save/i)[0];
+    if (saveBtn) {
+      saveBtn.click();
+      await sleep(500);
+    }
+  }
+
+  function setRenderButtonsBusy(busy) {
+    findButtonsByText(/render/i).forEach((btn) => {
+      btn.disabled = busy;
+      btn.style.opacity = busy ? "0.45" : "";
+      btn.style.pointerEvents = busy ? "none" : "";
+      if (busy) {
+        btn.dataset.efOldText = btn.dataset.efOldText || btn.textContent;
+        btn.textContent = "Rendering...";
+      } else if (btn.dataset.efOldText) {
+        btn.textContent = btn.dataset.efOldText;
+        delete btn.dataset.efOldText;
+      }
+    });
+  }
+
+  function css() {
+    if (document.getElementById("ef-render-upload-modal-style")) return;
+    const style = document.createElement("style");
+    style.id = "ef-render-upload-modal-style";
+    style.textContent = `
+      .efru-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:99999;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+      .efru-modal{width:min(980px,92vw);max-height:88vh;overflow:auto;background:#141414;border:1px solid #333;border-radius:16px;box-shadow:0 25px 90px rgba(0,0,0,.5);color:#eee}
+      .efru-head{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid #2c2c2c;background:#191919;position:sticky;top:0;z-index:2}
+      .efru-head h2{font-size:18px;margin:0}
+      .efru-body{padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+      .efru-field{display:flex;flex-direction:column;gap:6px}
+      .efru-field.full{grid-column:1/-1}
+      .efru-field label{font-size:12px;color:#aaa;text-transform:uppercase;letter-spacing:.08em}
+      .efru-field input,.efru-field textarea,.efru-field select{background:#0d0d0d;border:1px solid #333;color:#fff;border-radius:9px;padding:10px;font-size:14px;outline:none}
+      .efru-field textarea{min-height:170px;resize:vertical;font-family:Consolas,monospace;font-size:12px}
+      .efru-actions{display:flex;gap:10px;justify-content:flex-end;padding:14px 18px;border-top:1px solid #2c2c2c;background:#181818;position:sticky;bottom:0}
+      .efru-actions button,.efru-head button{border:0;border-radius:10px;padding:10px 14px;background:#2b2b2b;color:#fff;cursor:pointer}
+      .efru-actions button.primary{background:#6d5dfc}
+      .efru-actions button:disabled{opacity:.45;cursor:not-allowed}
+      .efru-status{grid-column:1/-1;color:#bbb;font-size:13px;background:#0d0d0d;border:1px solid #2b2b2b;padding:10px;border-radius:9px;white-space:pre-wrap}
+      .efru-hidden{display:none!important}
+    `;
+    document.head.appendChild(style);
+  }
+
+  function makeModal(defaultUpload) {
+    css();
+    const overlay = document.createElement("div");
+    overlay.className = "efru-overlay";
+    overlay.innerHTML = `
+      <div class="efru-modal">
+        <div class="efru-head">
+          <h2>Render ${defaultUpload ? "& Upload" : "Only"}</h2>
+          <button type="button" data-close>Close</button>
+        </div>
+        <div class="efru-body">
+          <div class="efru-status" data-status>Generating YouTube metadata...</div>
+          <div class="efru-field">
+            <label>Visibility</label>
+            <select data-visibility>
+              <option value="private">Private</option>
+              <option value="unlisted">Unlisted</option>
+              <option value="public">Public</option>
+              <option value="schedule">Schedule</option>
+            </select>
+          </div>
+          <div class="efru-field" data-schedule-wrap>
+            <label>Schedule date & time</label>
+            <input type="datetime-local" data-schedule>
+          </div>
+          <div class="efru-field full">
+            <label>Title</label>
+            <input data-title maxlength="100">
+          </div>
+          <div class="efru-field full">
+            <label>Description</label>
+            <textarea data-description></textarea>
+          </div>
+          <div class="efru-field full">
+            <label>Tags, comma-separated</label>
+            <textarea data-tags style="min-height:90px"></textarea>
+          </div>
+          <div class="efru-field">
+            <label>Category ID</label>
+            <input data-category value="10">
+          </div>
+          <div class="efru-field">
+            <label>Made for kids?</label>
+            <select data-kids>
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
+          </div>
+        </div>
+        <div class="efru-actions">
+          <button type="button" data-render-only>Render Only</button>
+          <button type="button" class="primary" data-render-upload>${defaultUpload ? "Render & Upload" : "Render"}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector("[data-close]").onclick = () => overlay.remove();
+
+    const visibility = overlay.querySelector("[data-visibility]");
+    const scheduleWrap = overlay.querySelector("[data-schedule-wrap]");
+    const updateSchedule = () => scheduleWrap.classList.toggle("efru-hidden", visibility.value !== "schedule");
+    visibility.addEventListener("change", updateSchedule);
+    updateSchedule();
+
+    return overlay;
+  }
+
+  function fillModal(overlay, metadata) {
+    overlay.querySelector("[data-title]").value = metadata.title || "";
+    overlay.querySelector("[data-description]").value = metadata.description || "";
+    overlay.querySelector("[data-tags]").value = Array.isArray(metadata.tags) ? metadata.tags.join(", ") : (metadata.tags || "");
+    overlay.querySelector("[data-category]").value = metadata.category_id || metadata.categoryId || "10";
+    overlay.querySelector("[data-kids]").value = String(!!metadata.made_for_kids);
+  }
+
+  function getModalMetadata(overlay) {
+    const tags = overlay.querySelector("[data-tags]").value
+      .split(/[,\n]+/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+    return {
+      title: overlay.querySelector("[data-title]").value.trim(),
+      description: overlay.querySelector("[data-description]").value,
+      tags,
+      category_id: overlay.querySelector("[data-category]").value.trim() || "10",
+      made_for_kids: overlay.querySelector("[data-kids]").value === "true"
+    };
+  }
+
+  async function openRenderUploadModal(defaultUpload) {
+    const overlay = makeModal(defaultUpload);
+    const status = overlay.querySelector("[data-status]");
+    try {
+      await triggerSave();
+      const data = await api("/api/youtube-metadata", {});
+      fillModal(overlay, data.metadata || {});
+      status.textContent = data.full?.source === "gemini+template"
+        ? "Metadata generated with Gemini + template. Review before rendering."
+        : "Metadata generated from template. Review before rendering.";
+    } catch (err) {
+      status.textContent = "Metadata generation failed: " + err.message + "\nYou can still type metadata manually.";
+    }
+
+    async function start(upload) {
+      const visibility = overlay.querySelector("[data-visibility]").value;
+      const schedule_at = overlay.querySelector("[data-schedule]").value;
+      if (visibility === "schedule" && !schedule_at) {
+        status.textContent = "Please select schedule date and time.";
+        return;
+      }
+
+      const metadata = getModalMetadata(overlay);
+      if (!metadata.title) {
+        status.textContent = "Title is required.";
+        return;
+      }
+
+      overlay.querySelectorAll("button").forEach((b) => b.disabled = true);
+      setRenderButtonsBusy(true);
+      status.textContent = upload ? "Starting render + YouTube upload..." : "Starting render...";
+
+      try {
+        const started = await api("/api/render-upload/start", {
+          upload,
+          visibility,
+          schedule_at,
+          metadata
+        });
+        const jobId = started.job_id || started.status?.job_id || "job";
+        status.textContent = `Job started: ${jobId}`;
+
+        const timer = setInterval(async () => {
+          try {
+            const s = await api("/api/render-upload/status");
+            status.textContent = `Stage: ${s.stage || "unknown"}\nRunning: ${!!s.running}\n${s.error ? "Error: " + s.error : ""}\n${s.rendered_video ? "Video: " + s.rendered_video : ""}\n${s.upload?.url ? "YouTube: " + s.upload.url : ""}`;
+            if (!s.running && s.ok !== null && s.ok !== undefined) {
+              clearInterval(timer);
+              setRenderButtonsBusy(false);
+              overlay.querySelectorAll("button").forEach((b) => b.disabled = false);
+            }
+          } catch (err) {
+            status.textContent = "Status error: " + err.message;
+          }
+        }, 1500);
+      } catch (err) {
+        status.textContent = "Start failed: " + err.message;
+        setRenderButtonsBusy(false);
+        overlay.querySelectorAll("button").forEach((b) => b.disabled = false);
+      }
+    }
+
+    overlay.querySelector("[data-render-only]").onclick = () => start(false);
+    overlay.querySelector("[data-render-upload]").onclick = () => start(defaultUpload);
+  }
+
+  document.addEventListener("click", (event) => {
+    const btn = event.target.closest && event.target.closest("button");
+    if (!btn) return;
+    const text = (btn.textContent || "").trim();
+    if (!/render/i.test(text)) return;
+    if (btn.closest(".efru-modal")) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    const defaultUpload = !/only/i.test(text);
+    openRenderUploadModal(defaultUpload);
+  }, true);
+})();
+</script>
+
+</body>
+</html>

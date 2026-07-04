@@ -1,0 +1,11 @@
+[project]
+name = "echoforge"
+version = "0.1.0"
+description = "Clean automated lyrics video workflow"
+requires-python = ">=3.10"
+
+[project.scripts]
+echoforge = "echoforge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
