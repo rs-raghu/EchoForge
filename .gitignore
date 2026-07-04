@@ -70,3 +70,41 @@ data/app_state/*.json
 
 # Local secrets
 .secrets/
+# EchoForge local state
+.env
+client_secrets.json
+workspaces/
+logs/*.log
+database/*.db
+database/*.db-*
+database/token.json
+
+# Remotion runtime output
+renderer/remotion/current_props.json
+renderer/remotion/public/audio.mp3
+renderer/remotion/public/timestamps.json
+renderer/remotion/out/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+.remotion/
+
+# OS and editor
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+.vscode/
+*.code-workspace

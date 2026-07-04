@@ -1,0 +1,9 @@
+{
+  "name": "echoforge-v3-tools",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "web:build": "node scripts/build-web-studio.mjs",
+    "web:watch": "node scripts/build-web-studio.mjs --watch"
+  }
+}
