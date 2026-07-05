@@ -1,0 +1,290 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+YOUTUBE_DESCRIPTION_LIMIT = 4900
+YOUTUBE_TAGS_FIELD_SOFT_LIMIT = 470
+
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return {}
+
+def _read_text(path: Path) -> str:
+    try:
+        if path.exists():
+            return path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+    return ""
+
+def _clean_text(value: Any, default: str = "") -> str:
+    return re.sub(r"\s+", " ", str(value or default).strip())
+
+def _uniq(items: list[str]) -> list[str]:
+    seen, out = set(), []
+    for item in items:
+        item = _clean_text(item)
+        if not item:
+            continue
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+def _slug_words(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r"[\(\)\[\]\{\}\|:;,.!?'\"`~]", " ", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+def _hashtag(text: str) -> str:
+    base = re.sub(r"[^a-z0-9_]", "", _slug_words(text).replace(" ", ""))
+    return f"#{base}" if base else ""
+
+def _split_artists(artist_text: str) -> list[str]:
+    text = _clean_text(artist_text)
+    if not text:
+        return []
+    text = re.sub(r"\b(feat\.?|ft\.?|featuring)\b", ",", text, flags=re.I)
+    text = re.sub(r"\s+(and|&|x|×)\s+", ",", text, flags=re.I)
+    return _uniq([p.strip(" ,") for p in text.split(",") if p.strip(" ,")])
+
+def _primary_artist(artist_text: str) -> str:
+    artists = _split_artists(artist_text)
+    return artists[0] if artists else _clean_text(artist_text)
+
+def _load_project_context(project: str | Path) -> dict[str, Any]:
+    project_dir = Path(project)
+    state = _read_json(project_dir / "project_state.json")
+    review = _read_json(project_dir / "metadata_review.json")
+    song_obj = state.get("song") if isinstance(state.get("song"), dict) else {}
+    meta_obj = state.get("metadata") if isinstance(state.get("metadata"), dict) else {}
+    title = review.get("display_title") or review.get("title") or song_obj.get("title") or state.get("song_title") or meta_obj.get("title") or ""
+    artist = review.get("display_artist") or review.get("artist") or song_obj.get("artist") or state.get("artist") or state.get("artist_text") or meta_obj.get("artist") or ""
+    album = review.get("album") or song_obj.get("album") or meta_obj.get("album") or ""
+    year = review.get("year") or song_obj.get("year") or meta_obj.get("year") or ""
+    genre = review.get("genre") or song_obj.get("genre") or meta_obj.get("genre") or ""
+    lyrics = _read_text(project_dir / "lyrics" / "lyrics.txt")
+    if not lyrics:
+        lyrics = re.sub(r"\[[0-9:.]+\]", "", _read_text(project_dir / "sync" / "final_synced_lyrics.lrc"))
+    return {
+        "project_dir": str(project_dir),
+        "song_title": _clean_text(title, "Unknown Song"),
+        "artist_text": _clean_text(artist, "Unknown Artist"),
+        "album": _clean_text(album),
+        "year": _clean_text(year),
+        "genre": _clean_text(genre),
+        "lyrics": lyrics.strip(),
+    }
+
+def _make_title(ctx: dict[str, Any]) -> str:
+    primary = _primary_artist(ctx["artist_text"]) or ctx["artist_text"]
+    parts = [f"{ctx['song_title']} - {primary} (Lyrics)"]
+    if ctx.get("year"):
+        parts.append(str(ctx["year"]))
+    if ctx.get("album"):
+        parts.append(f"Album : {ctx['album']}")
+    if ctx.get("genre"):
+        parts.append(str(ctx["genre"]))
+    return " | ".join(parts)
+
+def _make_description_hashtags(ctx: dict[str, Any]) -> list[str]:
+    base = [_hashtag(ctx["song_title"])]
+    base += [_hashtag(a) for a in _split_artists(ctx["artist_text"])[:3]]
+    if ctx.get("album"):
+        base.append(_hashtag(ctx["album"]))
+    return _uniq([x for x in base if x])[:5]
+
+def _make_search_phrases(ctx: dict[str, Any]) -> list[str]:
+    title = ctx["song_title"]
+    artists = _split_artists(ctx["artist_text"])
+    primary = artists[0] if artists else ctx["artist_text"]
+    phrases = [title.lower(), f"{title} {primary}".lower(), f"{title} lyrics".lower(), f"{title} lyric video".lower()]
+    for artist in artists:
+        phrases.append(f"{title} {artist}".lower())
+        phrases.append(f"{artist} lyrics".lower())
+    return _uniq(phrases)
+
+def _trim_description(description: str) -> str:
+    if len(description) <= YOUTUBE_DESCRIPTION_LIMIT:
+        return description
+    marker = "\n\n🎤 Lyrics:\n"
+    if marker not in description:
+        return description[:YOUTUBE_DESCRIPTION_LIMIT - 20].rstrip() + "\n\n..."
+    before, lyrics = description.split(marker, 1)
+    remaining = YOUTUBE_DESCRIPTION_LIMIT - len(before) - len(marker) - 30
+    return before + marker + lyrics[:max(200, remaining)].rstrip() + "\n\n..."
+
+def _make_tags(ctx: dict[str, Any]) -> list[str]:
+    title = ctx["song_title"]
+    artist_text = ctx["artist_text"]
+    artists = _split_artists(artist_text)
+    primary = artists[0] if artists else artist_text
+    album = ctx.get("album", "")
+    genre = ctx.get("genre", "")
+    raw = [
+        "winsomegin", title, f"{title} lyrics", f"{title} lyric video",
+        f"{title} song", f"{title} music", f"{title} official lyrics",
+        f"{title} full lyrics", primary, f"{primary} lyrics", f"{primary} songs",
+        f"{title} {primary}", "lyrics", "lyric video", "lyrics video",
+        "song lyrics", "music lyrics", "new song lyrics", "trending song lyrics",
+        "english lyrics", "music", "song",
+    ]
+    for artist in artists:
+        raw += [artist, f"{artist} lyrics", f"{title} {artist}"]
+    if album:
+        raw += [album, f"{album} lyrics", f"{title} {album}"]
+    if genre:
+        raw += [genre, f"{genre} music", f"{genre} lyrics"]
+    tags = _uniq(raw)
+    final, total = [], 0
+    for tag in tags:
+        add_len = len(tag) + (1 if final else 0)
+        if total + add_len > YOUTUBE_TAGS_FIELD_SOFT_LIMIT:
+            break
+        final.append(tag)
+        total += add_len
+    if not any(t.lower() == "winsomegin" for t in final):
+        final.insert(0, "winsomegin")
+    return final
+
+def _make_description(ctx: dict[str, Any], tags: list[str]) -> str:
+    title = ctx["song_title"]
+    artist_text = ctx["artist_text"]
+    lyrics = ctx.get("lyrics", "").strip()
+    hashtags = "  ".join(_make_description_hashtags(ctx))
+    short_tag_line = "#song #music #lyricvideo #lyrics"
+    phrases = "\n".join(_make_search_phrases(ctx)[:12])
+    tag_words = "  ".join(f"#{_slug_words(t).replace(' ', '')}" for t in tags[:4] if _slug_words(t))
+    desc = (
+        f"{hashtags}\n"
+        f"🎶{title}  -  {artist_text} (Lyrics)\n"
+        "🔥 Help us reach 1000 subscribers!\n"
+        "🔔 Subscribe and turn on notifications to stay updated with new uploads.\n"
+        "👍🏽 Please leave a like, share, and appreciate all the support!\n"
+        "________________________________________________________________________\n\n"
+        f"📋 Tags: {short_tag_line}\n\n"
+        f"{phrases}\n\n"
+        f"🎤 Lyrics:\n{lyrics}\n"
+    )
+    if tag_words:
+        desc = desc.replace("📋 Tags: " + short_tag_line, "📋 Tags: " + short_tag_line + " " + tag_words)
+    return _trim_description(desc.strip())
+
+def _read_gemini_key(root: Path) -> str:
+    env_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if env_key:
+        return env_key
+    secret = root / ".secrets" / "gemini_api_key.txt"
+    if secret.exists():
+        return secret.read_text(encoding="utf-8").strip()
+    env_path = root / ".env"
+    text = _read_text(env_path)
+    m = re.search(r"^GEMINI_API_KEY\s*=\s*(.+)$", text, flags=re.M)
+    return m.group(1).strip().strip("\"'") if m else ""
+
+def _extract_json(text: str) -> dict[str, Any]:
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?", "", text).strip()
+        text = re.sub(r"```$", "", text).strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start >= 0 and end > start:
+        text = text[start:end + 1]
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+def _gemini_metadata(root: Path, ctx: dict[str, Any], template: dict[str, Any]) -> dict[str, Any] | None:
+    api_key = _read_gemini_key(root)
+    if not api_key:
+        return None
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash").strip()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    prompt = (
+        "Create YouTube metadata for a lyric video using this exact style. Return JSON only. "
+        "Title format: Song - Primary Artist (Lyrics) | Year | Album : Album Name | Genre. "
+        "If album/year/genre are unknown, omit those parts. "
+        "Description must start with 3 to 5 hashtags, then song title line, subscribe line, notification line, like/share line, Tags line, search phrases, and Lyrics. "
+        "Tags array must include many relevant tags and must include winsomegin. Avoid claiming official ownership.\n\n"
+        f"Known data: {json.dumps({k: ctx.get(k) for k in ['song_title','artist_text','album','year','genre']}, ensure_ascii=False)}\n\n"
+        f"Fallback template: {json.dumps(template, ensure_ascii=False)}\n\n"
+        f"Lyrics preview:\n{ctx.get('lyrics','')[:2500]}"
+    )
+    body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.4, "responseMimeType": "application/json"}}
+    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), headers={"Content-Type": "application/json", "x-goog-api-key": api_key}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        text = payload["candidates"][0]["content"]["parts"][0]["text"]
+        data = _extract_json(text)
+        return data or {"_gemini_error": "Gemini returned non-JSON metadata."}
+    except Exception as exc:
+        return {"_gemini_error": str(exc)}
+
+def _sanitize_metadata(ctx: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
+    title = _clean_text(data.get("title")) or _make_title(ctx)
+    description = str(data.get("description") or "").strip() or _make_description(ctx, _make_tags(ctx))
+    tags_raw = data.get("tags")
+    if isinstance(tags_raw, str):
+        tags = [x.strip() for x in re.split(r"[,#\n]", tags_raw) if x.strip()]
+    elif isinstance(tags_raw, list):
+        tags = [str(x).strip() for x in tags_raw if str(x).strip()]
+    else:
+        tags = _make_tags(ctx)
+    tags = _uniq(["winsomegin"] + tags + _make_tags(ctx))
+    final_tags, total = [], 0
+    for tag in tags:
+        add_len = len(tag) + (1 if final_tags else 0)
+        if total + add_len > YOUTUBE_TAGS_FIELD_SOFT_LIMIT:
+            break
+        final_tags.append(tag)
+        total += add_len
+    return {"title": title[:100], "description": _trim_description(description), "tags": final_tags, "category_id": str(data.get("category_id") or data.get("categoryId") or "10"), "made_for_kids": bool(data.get("made_for_kids", False)), "source": data.get("source", "template")}
+
+def generate_youtube_metadata(project: str | Path, *, root: str | Path | None = None, use_gemini: bool = False) -> dict[str, Any]:
+    project_dir = Path(project)
+    root_dir = Path(root) if root else project_dir.parents[1] if len(project_dir.parents) > 1 else Path.cwd()
+    ctx = _load_project_context(project_dir)
+    template = {"title": _make_title(ctx), "description": _make_description(ctx, _make_tags(ctx)), "tags": _make_tags(ctx), "category_id": "10", "made_for_kids": False, "source": "template"}
+    generated = _gemini_metadata(root_dir, ctx, template) if use_gemini else None
+    meta, gemini_error = template, None
+    if isinstance(generated, dict) and generated:
+        if "_gemini_error" in generated:
+            gemini_error = generated["_gemini_error"]
+        else:
+            generated["source"] = "gemini"
+            meta = _sanitize_metadata(ctx, generated)
+    out = {"ok": True, "mode": "youtube_metadata_generation", "source": meta.get("source", "template"), "project_dir": str(project_dir), "song_title": ctx["song_title"], "artist_text": ctx["artist_text"], "album": ctx.get("album", ""), "year": ctx.get("year", ""), "genre": ctx.get("genre", ""), "metadata": meta, "gemini_error": gemini_error, "created_at": datetime.now(timezone.utc).isoformat(), "note": "Generated metadata should be reviewed before upload. Only include lyrics in descriptions when you have rights/permission to publish them."}
+    upload_dir = project_dir / "upload"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    (upload_dir / "youtube_metadata.json").write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out
+
+def main() -> int:
+    import argparse
+    parser = argparse.ArgumentParser(description="Generate YouTube title, description and tags for an EchoForge project.")
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--use-gemini", action="store_true")
+    parser.add_argument("--root", default=None)
+    args = parser.parse_args()
+    result = generate_youtube_metadata(args.project, root=args.root, use_gemini=args.use_gemini)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result.get("ok") else 1
+
+if __name__ == "__main__":
+    raise SystemExit(main())

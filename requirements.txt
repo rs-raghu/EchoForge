@@ -1,0 +1,12 @@
+playwright>=1.45.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+yt-dlp>=2025.1.0
+Pillow>=10.0.0
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+google-auth
+google-api-python-client>=2.0.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.2.0

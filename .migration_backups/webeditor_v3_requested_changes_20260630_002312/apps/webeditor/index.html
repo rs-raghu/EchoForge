@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>EchoForge WebEditor V3</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo-dot"></div>
+        <div>
+          <div class="brand-title">EchoForge WebEditor</div>
+          <div class="brand-subtitle" id="projectTitle">Loading project...</div>
+        </div>
+      </div>
+
+      <div class="shortcut-strip">
+        <span><b>Space</b> Play</span>
+        <span><b>S</b> Split</span>
+        <span><b>T</b> Text</span>
+        <span><b>Del</b> Delete</span>
+        <span><b>Ctrl+A</b> Lyrics</span>
+        <span><b>+/−</b> Zoom</span>
+      </div>
+
+      <div class="top-actions">
+        <button id="btnUndo" title="Ctrl+Z">Undo</button>
+        <button id="btnRedo" title="Ctrl+Y">Redo</button>
+        <button id="btnSelectAllLyrics" title="Ctrl+A">Select all lyrics</button>
+        <button id="btnSave" class="primary" title="Ctrl+S">Save</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="editor-main">
+        <section class="viewer-shell">
+          <div class="viewer-top">
+            <span id="timeReadout">00:00.000 / 00:00.000</span>
+            <span id="statusText">Ready</span>
+          </div>
+
+          <div id="viewer" class="viewer">
+            <img id="backgroundImg" class="background-img" alt="Background" />
+            <div id="lyricOverlay" class="lyric-overlay"></div>
+            <div id="selectedBox" class="selected-box hidden"></div>
+          </div>
+
+          <div class="transport">
+            <button id="btnStart" title="Home">|◀</button>
+            <button id="btnBack" title="Left arrow">−1s</button>
+            <button id="btnPlay" class="play">▶</button>
+            <button id="btnForward" title="Right arrow">+1s</button>
+            <button id="btnEnd" title="End">▶|</button>
+            <input id="masterSeek" type="range" min="0" max="10000" value="0" />
+          </div>
+
+          <audio id="audio" preload="metadata"></audio>
+        </section>
+
+        <section class="timeline-shell">
+          <div class="timeline-header">
+            <div class="timeline-left-title">Timeline</div>
+            <div class="timeline-top-tools">
+              <span id="selectionStatus">0 selected</span>
+              <label>Zoom <input id="zoomSlider" type="range" min="4" max="36" value="12" /></label>
+            </div>
+          </div>
+
+          <div class="timeline-body">
+            <div class="track-labels" id="trackLabels"></div>
+            <div class="tracks-viewport" id="tracksViewport">
+              <div id="timelineContent" class="timeline-content">
+                <div id="ruler" class="ruler"></div>
+                <div id="tracks" class="tracks"></div>
+                <div id="playhead" class="playhead"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <aside class="right-panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Inspector</div>
+            <div class="panel-subtitle" id="infoSelected">No clip selected</div>
+          </div>
+          <button id="btnSelectAllLyrics2">All lyrics</button>
+        </div>
+
+        <label>Text</label>
+        <textarea id="clipText" rows="4" placeholder="Select a text clip"></textarea>
+
+        <div class="grid2">
+          <div>
+            <label>Start</label>
+            <input id="clipStart" type="number" step="0.01" />
+          </div>
+          <div>
+            <label>End</label>
+            <input id="clipEnd" type="number" step="0.01" />
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div>
+            <label>X</label>
+            <input id="clipX" type="number" step="1" />
+          </div>
+          <div>
+            <label>Y</label>
+            <input id="clipY" type="number" step="1" />
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div>
+            <label>Width</label>
+            <input id="clipWidth" type="number" step="1" />
+          </div>
+          <div>
+            <label>Font size</label>
+            <input id="fontSize" type="number" step="1" />
+          </div>
+        </div>
+
+        <label>Font</label>
+        <select id="fontFamily">
+          <option value="Bernier">Bernier</option>
+          <option value="Arial">Arial</option>
+          <option value="Impact">Impact</option>
+          <option value="Georgia">Georgia</option>
+        </select>
+
+        <label>Color</label>
+        <input id="fontColor" type="color" />
+
+        <div class="inspector-note">
+          Changes apply instantly to selected lyric clips. Ctrl-click clips to select multiple, or use All lyrics.
+        </div>
+
+        <div class="panel-title mt">Project</div>
+        <div class="info-row"><span>Duration</span><b id="infoDuration">--</b></div>
+        <div class="info-row"><span>Font</span><b id="fontStatus">Checking...</b></div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
