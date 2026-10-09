@@ -3,11 +3,8 @@ import subprocess
 import sys
 from echoforge.core.config import print_settings
 from echoforge.core.paths import ROOT_DIR, ensure_runtime_dirs, get_path_report
-from echoforge.core.project_builder import init_next_project
-from echoforge.stages.songscout.cleaner import clean_rows
-from echoforge.stages.songscout.database import init_database, record_scrape_result, upsert_songs, workflow_counts
-from echoforge.stages.songscout.policy import empty_database_message, should_scrape_today
-from echoforge.stages.songscout.scraper import delete_transient_debug_files, scrape_youtube_charts
+from echoforge.stages.songscout.database import init_database, workflow_counts
+from echoforge.stages.songscout.policy import should_scrape_today
 
 WORKFLOW = [
     "1. SongScout       - scrape chart only on Friday and select next unused song",
@@ -95,16 +92,8 @@ def show_workflow() -> None:
 
 
 def _refresh_songscout_for_workflow() -> None:
-    decision = should_scrape_today(force=False)
-    print(f"SongScout scrape policy: {decision.reason}")
-    if not decision.should_scrape:
-        return
-    raw_rows = scrape_youtube_charts(max_songs=100, headless=True)
-    clean_songs = clean_rows(raw_rows)
-    result = upsert_songs(clean_songs)
-    record_scrape_result(success=True, row_count=len(raw_rows), clean_count=len(clean_songs), reason=decision.reason)
-    delete_transient_debug_files()
-    print(f"SongScout scrape completed: {result}")
+    from echoforge.stages.songscout.refresh import refresh_chart
+    print(f"SongScout refresh: {refresh_chart()}")
 
 
 def run_all_placeholder() -> None:
@@ -116,4 +105,4 @@ def run_all_placeholder() -> None:
     if not script.exists():
         print(f"Workflow script not found at {script}")
         return
-    subprocess.run([sys.executable, str(script)])
+    subprocess.run([sys.executable, str(script)], check=True)

@@ -16,9 +16,12 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
 from PIL import Image, ImageDraw, ImageFont
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
+from echoforge.core.storage import atomic_json, update_json
+from echoforge.core.security import asset_path, validate_editor
 
 APP_DIR = Path(__file__).resolve().parent
 WEBEDITOR_ROOT = APP_DIR.parent
@@ -50,11 +53,24 @@ app = FastAPI(title="EchoForge WebEditor", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware('http')
+async def local_boundary(request: Request, call_next):
+    origin=request.headers.get('origin')
+    allowed={str(request.base_url).rstrip('/'),'http://localhost:5173','http://127.0.0.1:5173'}
+    if request.url.hostname not in {'localhost','127.0.0.1','::1','testserver'} or (origin and origin not in allowed):
+        return JSONResponse({'detail':'Local editor origin required'},status_code=403)
+    if request.method in {'POST','PUT','PATCH'}:
+        length=request.headers.get('content-length','0')
+        if not length.isdigit() or int(length)>8*1024*1024:
+            return JSONResponse({'detail':'Invalid request size'},status_code=413)
+    return await call_next(request)
 
 
 class SaveProjectRequest(BaseModel):
@@ -119,8 +135,19 @@ def _create_lyric_clip(line: dict[str, Any], width: int, height: int, overrides:
     return clip
 
 
+def validate_legacy(project_dir,project):
+    import copy
+    normalized=copy.deepcopy(project)
+    for track in normalized.get('tracks',[]):
+        for clip in track.get('clips',[]):
+            clip['opacity']=float(clip.get('opacity',100))/100
+    try: validate_editor(normalized,project_dir)
+    except (ValueError,TypeError) as exc: raise HTTPException(422,str(exc)) from exc
+
+
 def save_project_bundle(project_dir: Path, project: dict[str, Any]) -> None:
     """Guarantees editor project and state contracts update together."""
+    validate_legacy(project_dir,project)
     write_json(project_dir / EDITOR_FILENAME, project)
     write_project_state(project_dir, project)
 
@@ -256,80 +283,11 @@ def wait_for_tubeharbor_process(process: subprocess.Popen, log_file, log_path: P
 
 
 def start_tubeharbor_upload_for_render(project_dir: Path, privacy: str | None = None) -> dict[str, Any]:
-    """
-    Starts TubeHarbor upload for exactly this rendered output:
-    <project>/renders/final_lyrics_video.mp4
+    from echoforge.stages.tubeharbor.youtube_uploader import upload_to_youtube
+    result=upload_to_youtube(project_dir/'renders/final_lyrics_video.mp4',project_dir,{'visibility':privacy or 'private'})
+    if not result.get('ok'): raise RuntimeError(result.get('reason','Upload failed'))
+    return result
 
-    This does NOT scan all videos and does NOT use watchdog.
-    """
-    tubeharbor_dir = get_tubeharbor_dir()
-    python_exe = get_tubeharbor_python(tubeharbor_dir)
-
-    video_path = project_dir / "renders" / "final_lyrics_video.mp4"
-    if not video_path.exists():
-        raise FileNotFoundError(f"Rendered video not found: {video_path}")
-
-    duration = ffprobe_duration_seconds(video_path)
-    if duration is None or duration <= 0.5:
-        raise RuntimeError(f"Refusing to upload invalid/zero-duration video: {video_path}")
-
-    upload_dir = project_dir / "upload"
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    log_path = upload_dir / "tubeharbor_auto_upload.log"
-
-    cmd = [
-        python_exe,
-        "-u",  # unbuffered output so upload progress appears in the log immediately
-        str(tubeharbor_dir / "run.py"),
-        "upload",
-        "--project",
-        str(project_dir),
-        "--video",
-        str(video_path),
-    ]
-
-    # If privacy is None, TubeHarbor uses upload_schedule.json/defaults.
-    # If privacy is provided, it overrides the schedule.
-    if privacy:
-        cmd.extend(["--privacy", privacy])
-
-    env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
-
-    log_file = log_path.open("a", encoding="utf-8", buffering=1)
-    log_file.write("\n\n================ TubeHarbor auto upload ================\n")
-    log_file.write(f"Started at: {time.ctime()}\n")
-    log_file.write(f"Project: {project_dir}\n")
-    log_file.write(f"Video: {video_path}\n")
-    log_file.write(f"Duration: {duration:.3f}s\n")
-    log_file.write("Command: " + " ".join(cmd) + "\n\n")
-    log_file.flush()
-
-    process = subprocess.Popen(
-        cmd,
-        cwd=str(tubeharbor_dir),
-        stdout=log_file,
-        stderr=subprocess.STDOUT,
-        text=True,
-        env=env,
-    )
-
-    threading.Thread(
-        target=wait_for_tubeharbor_process,
-        args=(process, log_file, log_path),
-        daemon=True,
-    ).start()
-
-    return {
-        "ok": True,
-        "mode": "direct_upload",
-        "pid": process.pid,
-        "projectDir": str(project_dir),
-        "videoPath": str(video_path),
-        "duration": duration,
-        "logPath": str(log_path),
-    }
 
 def find_first_existing(project_dir: Path, candidates: list[str]) -> str | None:
     for candidate in candidates:
@@ -632,17 +590,11 @@ def apply_default_lyric_style(project: dict[str, Any]) -> dict[str, Any]:
 
 
 def write_project_state(project_dir: Path, project: dict[str, Any]) -> None:
-    assets = project.get("assets") or {}
-    write_json(project_dir / "project_state.json", {
-        "schemaVersion": 1,
-        "projectId": project_dir.name,
-        "title": project.get("title") or project_dir.name,
-        "artist": project.get("artist") or "",
-        "assets": assets,
-        "editorProject": EDITOR_FILENAME,
-        "render": {"final_video": "renders/final_lyrics_video.mp4"},
-        "updated_at": time.time(),
-    })
+    def merge(state):
+        state.update(title=project.get('title') or state.get('title',project_dir.name),
+                     artist=project.get('artist') or state.get('artist',''), assets=project.get('assets') or {},
+                     editorProject=EDITOR_FILENAME, updated_at=time.time())
+    update_json(project_dir / 'project_state.json',merge,{})
 
 
 def repair_editor_project_assets(project_dir: Path, project: dict[str, Any]) -> tuple[dict[str, Any], bool]:
@@ -1218,7 +1170,8 @@ def render_job_worker(job_id: str, project_id: str, project: dict[str, Any]) -> 
         upload_error = None
 
         try:
-            upload_info = start_tubeharbor_upload_for_render(project_dir)
+            # Rendering alone is never authorization to publish.
+            upload_info = {'ok':True,'skipped':True,'reason':'Upload requires an explicit upload action'}
         except Exception as upload_exc:
             upload_error = str(upload_exc)
 
@@ -1252,14 +1205,16 @@ def render_job_worker(job_id: str, project_id: str, project: dict[str, Any]) -> 
         )
 
 def create_upload_schedule(project_dir: Path, request: ScheduleUploadRequest) -> dict[str, Any]:
-    (upload_dir := project_dir / "upload").mkdir(parents=True, exist_ok=True)
-    payload = {
-        "ok": True, "projectId": project_dir.name, "privacy": request.privacy,
-        "publish_at": request.publish_at, "video_path": request.video_path or "renders/final_lyrics_video.mp4",
-        "start_upload": request.start_upload, "created_at": time.time(),
-    }
-    write_json(upload_dir / "upload_schedule.json", payload)
+    from echoforge.stages.tubeharbor.youtube_uploader import privacy, upload_to_youtube
+    options={'visibility':request.privacy,'scheduleAt':request.publish_at}
+    privacy(options)
+    video=asset_path(project_dir,request.video_path or 'renders/final_lyrics_video.mp4',EF_ROOT)
+    payload={'ok':True,'projectId':project_dir.name,'privacy':request.privacy,'publish_at':request.publish_at,
+             'video_path':str(video),'start_upload':request.start_upload,'created_at':time.time()}
+    write_json(project_dir/'upload/upload_schedule.json',payload)
+    if request.start_upload: payload['upload']=upload_to_youtube(video,project_dir,options)
     return payload
+
 
 
 # =====================================================================
@@ -1316,6 +1271,7 @@ def render_project(project_id: str, request: SaveProjectRequest | None = None) -
 def patch_editor_clip(project_id: str, clip_id: str, request: UpdateClipRequest) -> dict[str, Any]:
     project_dir = safe_project_dir(project_id)
     project = patch_clip_in_project(load_or_bootstrap(project_dir), clip_id, request.patch)
+    validate_legacy(project_dir,project)
     write_json(project_dir / EDITOR_FILENAME, project)
     return {"ok": True, "project": project, "clipId": clip_id}
 
@@ -1369,7 +1325,7 @@ def schedule_project_upload(project_id: str, request: ScheduleUploadRequest) -> 
 
 @app.get("/api/projects/{project_id}/media")
 def get_media(project_id: str, path: str, request: Request):
-    target = safe_child(safe_project_dir(project_id), path)
+    target = asset_path(safe_project_dir(project_id), path, EF_ROOT)
     if not target.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     if target.suffix.lower() not in ALLOWED_MEDIA_SUFFIXES:
@@ -1420,7 +1376,7 @@ def get_media(project_id: str, path: str, request: Request):
 
 @app.get("/api/projects/{project_id}/download")
 def download_file(project_id: str, path: str) -> FileResponse:
-    target = safe_child(safe_project_dir(project_id), path)
+    target = asset_path(safe_project_dir(project_id), path, EF_ROOT)
     if not target.is_file(): raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(str(target), filename=target.name)
 

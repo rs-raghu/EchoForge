@@ -203,98 +203,8 @@ body.ef-rendering .ef-ru-actions::after {
     </main>
   </div>
 
+  <button class="ef-render-upload-button" id="efRenderUploadBtn">Render &amp; Upload</button>
   <script src="/app.js"></script>
-
-<!-- ECHOFORGE_STAGE3_RENDER_UPLOAD_UI_START -->
-<style>
-.ef-render-upload-button{position:static!important;top:auto!important;right:auto!important;bottom:auto!important;left:auto!important;z-index:auto!important;border:1px solid rgba(255,255,255,.18);background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;font-weight:800;border-radius:10px;padding:8px 11px;box-shadow:none;cursor:pointer;white-space:nowrap;min-width:auto}.ef-render-upload-button:hover{filter:brightness(1.08)}.ef-ru-backdrop{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(3,7,18,.72);z-index:99998}.ef-ru-backdrop.open{display:flex}.ef-ru-modal{width:min(760px,calc(100vw - 28px));max-height:calc(100vh - 28px);overflow:auto;border:1px solid rgba(255,255,255,.14);background:#101827;color:#e5e7eb;border-radius:18px;box-shadow:0 26px 90px rgba(0,0,0,.45);font-family:system-ui,-apple-system,Segoe UI,sans-serif}.ef-ru-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.1)}.ef-ru-head h2{margin:0;font-size:18px}.ef-ru-body{padding:16px 18px;display:grid;gap:12px}.ef-ru-row{display:grid;gap:7px}.ef-ru-row label{color:#aeb8c9;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}.ef-ru-row input,.ef-ru-row textarea,.ef-ru-row select{width:100%;box-sizing:border-box;background:#0b1220;color:#e5e7eb;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px 11px;outline:none}.ef-ru-row textarea{min-height:95px;resize:vertical}.ef-ru-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.ef-ru-actions{display:flex;justify-content:flex-end;gap:10px;padding:14px 18px 18px;border-top:1px solid rgba(255,255,255,.1)}.ef-ru-actions button{border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:10px 13px;cursor:pointer;background:#182235;color:#e5e7eb;font-weight:700}.ef-ru-actions .primary{background:linear-gradient(135deg,#16a34a,#2563eb);color:#fff}.ef-ru-progress{display:none;margin-top:10px;padding:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);border-radius:12px}.ef-ru-progress.open{display:block}.ef-ru-bar{height:10px;background:rgba(255,255,255,.1);border-radius:999px;overflow:hidden}.ef-ru-bar>div{height:100%;width:0%;background:linear-gradient(90deg,#22c55e,#3b82f6);transition:width .25s ease}.ef-ru-log{white-space:pre-wrap;max-height:180px;overflow:auto;margin-top:10px;color:#cbd5e1;font-size:12px;line-height:1.45}.ef-ru-small{color:#94a3b8;font-size:12px}.ef-ru-close{background:transparent!important;color:#cbd5e1}
-</style>
-<button class="ef-render-upload-button" id="efRenderUploadBtn">Render & Upload</button>
-<div class="ef-ru-backdrop" id="efRenderUploadModal"><div class="ef-ru-modal"><div class="ef-ru-head"><h2>Render & Upload</h2><button class="ef-ru-close" id="efRenderUploadClose">✕</button></div><div class="ef-ru-body"><div class="ef-ru-small">Auto-saves, renders, then uploads to YouTube if credentials are configured.</div><div class="ef-ru-grid"><div class="ef-ru-row"><label>Visibility</label><select id="efRuVisibility"><option value="private">Private</option><option value="public">Public</option><option value="unlisted">Unlisted</option><option value="schedule">Schedule</option></select></div><div class="ef-ru-row" id="efRuScheduleRow" style="display:none"><label>Schedule date & time</label><input id="efRuScheduleAt" type="datetime-local"></div></div><div class="ef-ru-row"><label>Title</label><input id="efRuTitle" placeholder="Auto title if empty"></div><div class="ef-ru-row"><label>Description</label><textarea id="efRuDescription" placeholder="Auto description if empty"></textarea></div><div class="ef-ru-grid"><div class="ef-ru-row"><label>Tags</label><input id="efRuTags" placeholder="lyrics, lyric video, music"></div><div class="ef-ru-row"><label>FPS</label><select id="efRuFps"><option value="24">24 fps</option><option value="30">30 fps</option></select></div></div><div class="ef-ru-progress" id="efRuProgress"><div class="ef-ru-small" id="efRuStatusText">Queued...</div><div class="ef-ru-bar"><div id="efRuProgressBar"></div></div><div class="ef-ru-log" id="efRuLog"></div></div></div><div class="ef-ru-actions"><button id="efRuRenderOnly">Render Only</button><button class="primary" id="efRuStart">Render & Upload</button></div></div></div>
-<script>(function(){const $=id=>document.getElementById(id),btn=$('efRenderUploadBtn'),modal=$('efRenderUploadModal'),close=$('efRenderUploadClose'),vis=$('efRuVisibility'),schRow=$('efRuScheduleRow'),sch=$('efRuScheduleAt'),box=$('efRuProgress'),st=$('efRuStatusText'),bar=$('efRuProgressBar'),log=$('efRuLog');btn.onclick=()=>modal.classList.add('open');close.onclick=()=>modal.classList.remove('open');modal.onclick=e=>{if(e.target===modal)modal.classList.remove('open')};vis.onchange=()=>schRow.style.display=vis.value==='schedule'?'grid':'none';async function save(){try{for(const n of ['saveProject','saveEditorProject','saveState'])if(typeof window[n]==='function'){await window[n]();return}const b=[...document.querySelectorAll('button')].find(x=>/save/i.test((x.textContent||'').trim()));if(b){b.click();await new Promise(r=>setTimeout(r,500))}}catch(e){console.warn(e)}}function opts(upload){let s=sch.value||null;if(vis.value==='schedule'&&s)s=new Date(s).toISOString();return{upload,visibility:vis.value,scheduleAt:vis.value==='schedule'?s:null,title:$('efRuTitle').value||null,description:$('efRuDescription').value||null,tags:$('efRuTags').value||null,fps:Number($('efRuFps').value||24),crf:20}}async function start(upload){box.classList.add('open');log.textContent='';st.textContent='Saving...';bar.style.width='1%';await save();st.textContent=upload?'Starting render and upload...':'Starting render...';const res=await fetch('/api/render/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(opts(upload))});const data=await res.json();if(!data.ok){st.textContent='Failed';log.textContent=JSON.stringify(data,null,2);return}poll(data.job_id)}async function poll(id){let done=false;while(!done){await new Promise(r=>setTimeout(r,1000));const job=await(await fetch('/api/render/status?job_id='+encodeURIComponent(id))).json();const p=Math.max(0,Math.min(1,Number(job.progress||0)));bar.style.width=Math.round(p*100)+'%';st.textContent=`${job.status||'running'} · ${job.stage||''} · ${Math.round(p*100)}%`;if(Array.isArray(job.logs)){log.textContent=job.logs.map(x=>`[${x.time||''}] ${x.message||''}`).join('\n');log.scrollTop=log.scrollHeight}if(['completed','failed','upload_failed'].includes(job.status)){done=true;if(job.youtube&&job.youtube.url)log.textContent+='\n\nYouTube URL: '+job.youtube.url;if(job.output)log.textContent+='\n\nRendered video: '+job.output;if(job.reason)log.textContent+='\n\nReason: '+job.reason}}}document.getElementById('efRuStart').onclick=()=>start(true);document.getElementById('efRuRenderOnly').onclick=()=>start(false)})();</script>
-<!-- ECHOFORGE_STAGE3_RENDER_UPLOAD_UI_END -->
-
-<script id="ef-render-button-layout-fix">
-(function(){
-  function placeRenderButton(){
-    const btn = document.getElementById('efRenderUploadBtn');
-    const topActions = document.querySelector('.top-actions');
-    const saveBtn = document.getElementById('btnSave');
-    if (!btn || !topActions) return;
-
-    // Keep the working Render & Upload modal/logic, but place the trigger inside
-    // the normal top action row so it does not float over Select lyrics / Save.
-    if (btn.parentElement !== topActions) {
-      topActions.insertBefore(btn, saveBtn || null);
-    }
-    btn.textContent = 'Render';
-    btn.title = 'Render & Upload';
-    btn.setAttribute('aria-label', 'Render and upload');
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', placeRenderButton);
-  } else {
-    placeRenderButton();
-  }
-  // Some patches append UI after load; run once more safely.
-  setTimeout(placeRenderButton, 250);
-})();
-</script>
-
-<script id="ef-render-single-job-guard">
-(function(){
-  let renderBusy = false;
-  const DONE = /\b(completed|failed|upload_failed|cancelled)\b/i;
-
-  function byId(id){ return document.getElementById(id); }
-  function actionButtons(){ return [byId('efRenderUploadBtn'), byId('efRuStart'), byId('efRuRenderOnly')].filter(Boolean); }
-  function setBusy(on){
-    renderBusy = !!on;
-    document.body.classList.toggle('ef-rendering', renderBusy);
-    actionButtons().forEach(btn => {
-      btn.disabled = renderBusy;
-      btn.setAttribute('aria-busy', renderBusy ? 'true' : 'false');
-      if (renderBusy) btn.setAttribute('data-render-disabled', '1');
-      else btn.removeAttribute('data-render-disabled');
-    });
-  }
-
-  // Capture phase: block accidental second clicks before older onclick handlers run.
-  document.addEventListener('click', function(ev){
-    const action = ev.target && ev.target.closest && ev.target.closest('#efRuStart,#efRuRenderOnly');
-    if (!action) return;
-    if (renderBusy) {
-      ev.preventDefault();
-      ev.stopImmediatePropagation();
-      return false;
-    }
-    setBusy(true);
-  }, true);
-
-  // Render top button only opens the modal. During a running job, keep it hidden/blocked.
-  document.addEventListener('click', function(ev){
-    const trigger = ev.target && ev.target.closest && ev.target.closest('#efRenderUploadBtn');
-    if (!trigger || !renderBusy) return;
-    ev.preventDefault();
-    ev.stopImmediatePropagation();
-    return false;
-  }, true);
-
-  function watchStatus(){
-    const st = byId('efRuStatusText');
-    const log = byId('efRuLog');
-    const text = ((st && st.textContent) || '') + '\n' + ((log && log.textContent) || '');
-    if (renderBusy && DONE.test(text)) setBusy(false);
-    // If fetch/start failed before polling, older script writes "Failed" into status.
-    if (renderBusy && /\bFailed\b/i.test(text)) setBusy(false);
-  }
-  setInterval(watchStatus, 700);
-  window.EchoForgeRenderBusy = () => renderBusy;
-})();
-</script>
-
-
 <script id="echoforge-render-upload-metadata-integration">
 (() => {
   if (window.__ECHOFORGE_RENDER_UPLOAD_METADATA_INTEGRATION__) return;
@@ -322,14 +232,8 @@ body.ef-rendering .ef-ru-actions::after {
   }
 
   async function triggerSave() {
-    if (typeof window.saveProject === "function") {
-      try { await window.saveProject(); return; } catch {}
-    }
-    const saveBtn = findButtonsByText(/^save$/i)[0] || findButtonsByText(/save/i)[0];
-    if (saveBtn) {
-      saveBtn.click();
-      await sleep(500);
-    }
+    if (typeof window.saveProject !== 'function') throw new Error('Editor is not ready');
+    await window.saveProject();
   }
 
   function setRenderButtonsBusy(busy) {
@@ -465,7 +369,6 @@ body.ef-rendering .ef-ru-actions::after {
     const overlay = makeModal(defaultUpload);
     const status = overlay.querySelector("[data-status]");
     try {
-      await triggerSave();
       const data = await api("/api/youtube-metadata", {});
       fillModal(overlay, data.metadata || {});
       status.textContent = data.full?.source === "gemini+template"
@@ -477,7 +380,8 @@ body.ef-rendering .ef-ru-actions::after {
 
     async function start(upload) {
       const visibility = overlay.querySelector("[data-visibility]").value;
-      const schedule_at = overlay.querySelector("[data-schedule]").value;
+      let schedule_at = overlay.querySelector("[data-schedule]").value;
+      if (schedule_at) schedule_at = new Date(schedule_at).toISOString();
       if (visibility === "schedule" && !schedule_at) {
         status.textContent = "Please select schedule date and time.";
         return;
@@ -494,6 +398,7 @@ body.ef-rendering .ef-ru-actions::after {
       status.textContent = upload ? "Starting render + YouTube upload..." : "Starting render...";
 
       try {
+        await triggerSave();
         const started = await api("/api/render-upload/start", {
           upload,
           visibility,
@@ -543,171 +448,5 @@ body.ef-rendering .ef-ru-actions::after {
   }, true);
 })();
 </script>
-
-
-<script id="echoforge-render-progress-script">
-(() => {
-  if (window.__ECHOFORGE_RENDER_PROGRESS_V1__) return;
-  window.__ECHOFORGE_RENDER_PROGRESS_V1__ = true;
-
-  function ensurePanel() {
-    let panel = document.getElementById("ef-render-status");
-    if (panel) return panel;
-    panel = document.createElement("div");
-    panel.id = "ef-render-status";
-    panel.className = "ef-render-status";
-    panel.innerHTML = `
-      <div class="row">
-        <div>
-          <div class="title">Render / Upload</div>
-          <div class="phase" id="ef-render-phase">idle</div>
-        </div>
-        <div id="ef-render-percent">0%</div>
-      </div>
-      <div class="bar"><div class="fill" id="ef-render-fill"></div></div>
-      <div class="message" id="ef-render-message">Waiting...</div>
-      <div class="link" id="ef-render-link"></div>
-    `;
-    document.body.appendChild(panel);
-    return panel;
-  }
-
-  function renderButtons() {
-    return [...document.querySelectorAll("button")].filter(btn => {
-      const t = (btn.textContent || "").toLowerCase().trim();
-      return t.includes("render") && !t.includes("status");
-    });
-  }
-
-  function setBusy(isBusy) {
-    renderButtons().forEach(btn => {
-      if (isBusy) btn.classList.add("ef-render-busy");
-      else btn.classList.remove("ef-render-busy");
-    });
-  }
-
-  function updatePanel(status) {
-    const panel = ensurePanel();
-    const running = !!status.running;
-    const phase = status.phase || "idle";
-    const progress = Math.max(0, Math.min(100, Number(status.progress || 0)));
-    const msg = status.message || "";
-    const ok = status.ok;
-
-    if (running || phase !== "idle" || ok !== null) panel.classList.add("show");
-
-    document.getElementById("ef-render-phase").textContent = phase;
-    document.getElementById("ef-render-percent").textContent = `${Math.round(progress)}%`;
-    document.getElementById("ef-render-fill").style.width = `${progress}%`;
-    document.getElementById("ef-render-message").textContent = msg;
-
-    const link = document.getElementById("ef-render-link");
-    link.innerHTML = "";
-    if (status.video_url) {
-      const a = document.createElement("a");
-      a.href = status.video_url;
-      a.target = "_blank";
-      a.rel = "noopener";
-      a.textContent = "Open uploaded YouTube video";
-      link.appendChild(a);
-    } else if (status.video_path) {
-      link.textContent = `Rendered: ${status.video_path}`;
-    }
-
-    setBusy(running);
-  }
-
-  async function pollStatus() {
-    try {
-      const res = await fetch("/api/render-upload-status", {cache:"no-store"});
-      if (!res.ok) return;
-      const status = await res.json();
-      updatePanel(status);
-    } catch (_) {}
-  }
-
-  setInterval(pollStatus, 1500);
-  pollStatus();
-
-  async function startRenderJob(upload) {
-    const visibilityEl = document.querySelector("[name='visibility'], #visibility, select[data-role='visibility']");
-    const scheduleEl = document.querySelector("[name='schedule_time'], [name='scheduleTime'], #scheduleTime, input[type='datetime-local']");
-    const visibility = visibilityEl ? visibilityEl.value : "private";
-    const schedule_time = scheduleEl ? scheduleEl.value : "";
-
-    ensurePanel().classList.add("show");
-    updatePanel({running:true, phase:"queued", progress:1, message:"Starting render job..."});
-
-    const res = await fetch("/api/render-upload-start", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({upload, visibility, schedule_time})
-    });
-
-    const payload = await res.json().catch(() => ({}));
-    if (!res.ok || payload.ok === false) {
-      updatePanel({running:false, ok:false, phase:"failed", progress:0, message: payload.error || payload.message || "Failed to start render job."});
-      return;
-    }
-    pollStatus();
-  }
-
-  // Keep the working top Render button/modal. Only intercept final action buttons.
-  document.addEventListener("click", (event) => {
-    const btn = event.target.closest("button");
-    if (!btn) return;
-    const text = (btn.textContent || "").toLowerCase().trim();
-
-    const isFinalRenderOnly = text === "render only" || text.includes("render only");
-    const isFinalRenderUpload = text.includes("render & upload") || text.includes("render and upload");
-
-    if (!isFinalRenderOnly && !isFinalRenderUpload) return;
-
-    event.preventDefault();
-    event.stopImmediatePropagation();
-
-    startRenderJob(isFinalRenderUpload);
-  }, true);
-})();
-</script>
-
-<!-- ECHOFORGE_RENDER_PROGRESS_PANEL_V1 -->
-<style>
-  #efRenderProgressPanel{position:fixed;right:18px;bottom:18px;z-index:99999;width:340px;padding:14px 14px 12px;border:1px solid rgba(255,255,255,.16);border-radius:16px;background:rgba(12,14,22,.92);backdrop-filter:blur(18px);box-shadow:0 18px 60px rgba(0,0,0,.42);color:#f3f5ff;font:13px system-ui,Segoe UI,Arial;display:none}
-  #efRenderProgressPanel .ef-title{font-weight:800;margin-bottom:6px;display:flex;justify-content:space-between;gap:10px}.ef-close{cursor:pointer;opacity:.7}.ef-close:hover{opacity:1}
-  #efRenderProgressPanel .ef-msg{opacity:.88;margin-bottom:10px;white-space:pre-wrap;line-height:1.35}
-  #efRenderProgressPanel .ef-bar{height:8px;background:rgba(255,255,255,.12);border-radius:999px;overflow:hidden}.ef-fill{height:100%;width:0%;background:#7aa7ff;border-radius:999px;transition:width .25s ease}
-  #efRenderProgressPanel .ef-link{margin-top:10px;display:none}.ef-link a{color:#9fc0ff;text-decoration:none;font-weight:700}.ef-link a:hover{text-decoration:underline}
-</style>
-<script>
-(function(){
-  if (window.__EF_RENDER_PROGRESS_PANEL__) return; window.__EF_RENDER_PROGRESS_PANEL__ = true;
-  const panel=document.createElement('div'); panel.id='efRenderProgressPanel';
-  panel.innerHTML='<div class="ef-title"><span>Render / Upload</span><span class="ef-close">×</span></div><div class="ef-msg">Waiting...</div><div class="ef-bar"><div class="ef-fill"></div></div><div class="ef-link"><a target="_blank" rel="noopener">Open YouTube video</a></div>';
-  document.body.appendChild(panel);
-  const msg=panel.querySelector('.ef-msg'), fill=panel.querySelector('.ef-fill'), linkWrap=panel.querySelector('.ef-link'), link=panel.querySelector('a');
-  panel.querySelector('.ef-close').onclick=()=>{panel.style.display='none'; panel.dataset.closed='1'};
-  function pct(s){ if(typeof s.progress==='number') return Math.max(0,Math.min(100,s.progress)); const m={starting:3,metadata:10,rendering:40,rendered:70,uploading:85,uploaded:100,failed:100}; return m[s.stage]||0; }
-  async function poll(){
-    try{
-      const r=await fetch('/api/render-upload-status?ts='+Date.now(),{cache:'no-store'});
-      if(!r.ok) return;
-      const s=await r.json();
-      if(!s || !s.stage) return;
-      if(panel.dataset.closed==='1' && !['starting','metadata','rendering','uploading'].includes(s.stage)) return;
-      panel.dataset.closed='0'; panel.style.display='block';
-      const p=pct(s); fill.style.width=p+'%';
-      msg.textContent=(s.message||s.stage||'Working...') + (typeof s.progress==='number'?'  '+s.progress+'%':'');
-      const url=s.youtube_url || (s.youtube && (s.youtube.url||s.youtube.video_url));
-      if(url){ link.href=url; linkWrap.style.display='block'; } else { linkWrap.style.display='none'; }
-      if(s.stage==='failed'){ fill.style.background='#ff6b6b'; }
-      else if(s.stage==='uploaded' || s.ok===true){ fill.style.background='#41d17d'; }
-      else { fill.style.background='#7aa7ff'; }
-    }catch(e){}
-  }
-  setInterval(poll,1000); poll();
-})();
-</script>
-
 </body>
 </html>

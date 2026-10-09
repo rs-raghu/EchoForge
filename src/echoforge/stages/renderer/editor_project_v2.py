@@ -80,8 +80,8 @@ def normalize_line(item: Any) -> dict[str, Any] | None:
     text = item.get("text") or item.get("line") or item.get("lyric") or item.get("content")
     if not text:
         return None
-    start = item.get("start", item.get("start_time", item.get("time", item.get("timestamp"))))
-    end = item.get("end", item.get("end_time"))
+    start = item.get("start", item.get("start_seconds", item.get("start_time", item.get("time", item.get("timestamp")))))
+    end = item.get("end", item.get("end_seconds", item.get("end_time")))
     try:
         start_f = float(start)
     except Exception:

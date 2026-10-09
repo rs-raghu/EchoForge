@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from echoforge.core.media import fingerprint
+from echoforge.core.storage import atomic_json
 from echoforge.stages.verselock.lrc_parser import lines_to_lrc, parse_lrc_file
 
 
@@ -23,8 +24,7 @@ def read_json(path: Path) -> dict[str, Any]:
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    atomic_json(path, payload)
 
 
 def update_project_state(project_dir: Path, result: dict[str, Any]) -> None:
@@ -117,26 +117,11 @@ def reuse_existing_synced_lyrics(project_dir: str | Path, *, force: bool = False
         write_json(report_path, result)
         return result
 
-    if output_lrc.exists() and output_json.exists() and not force:
-        result = {
-            "ok": True,
-            "mode": "reuse_existing_synced_lyrics",
-            "reused_existing_outputs": True,
-            "input": str(input_lrc),
-            "output_lrc": str(output_lrc),
-            "output_json": str(output_json),
-            "line_count": len(lines),
-            "project_dir": str(project_dir),
-        }
-        update_project_state(project_dir, result)
-        update_asset_manifest(project_dir, result)
-        mark_song_synced_if_possible(project_dir)
-        write_json(report_path, result)
-        return result
-
+    # Rebuild this inexpensive derivation rather than trusting stale or corrupt pairs.
     output_lrc.write_text(lines_to_lrc(lines), encoding="utf-8")
     payload = {
         "schema": "echoforge.final_synced_lyrics.v1",
+        "input_sha256": fingerprint(input_lrc),
         "source": "musevault.lyrics.synced_lyrics.lrc",
         "created_at": now_utc_iso(),
         "project_dir": str(project_dir),

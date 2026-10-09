@@ -1,28 +1,33 @@
-import json
 from pathlib import Path
 from echoforge.core.paths import ROOT_DIR
+from echoforge.core.storage import read_json, atomic_json, file_lock
 
 DB_PATH = ROOT_DIR / "data" / "upload_db.json"
 
-def _load_db() -> dict:
-    if not DB_PATH.exists():
-        return {}
-    try:
-        return json.loads(DB_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
 
-def _save_db(data: dict):
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    DB_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+def _load_db():
+    data = read_json(DB_PATH, {})
+    if not isinstance(data, dict):
+        raise ValueError("Upload ledger is corrupt; refusing to risk a duplicate upload")
+    return data
 
-def is_uploaded(project_dir: str | Path) -> bool:
-    db = _load_db()
-    project_key = str(Path(project_dir).resolve())
-    return project_key in db
 
-def record_upload(project_dir: str | Path, result_data: dict):
-    db = _load_db()
-    project_key = str(Path(project_dir).resolve())
-    db[project_key] = result_data
-    _save_db(db)
+def _save_db(data):
+    atomic_json(DB_PATH, data)
+
+
+def get_upload(project_dir):
+    with file_lock(DB_PATH.with_suffix('.lock')):
+        return _load_db().get(str(Path(project_dir).resolve()))
+
+
+def is_uploaded(project_dir):
+    record = get_upload(project_dir)
+    return bool(record and (record.get('video_id') or record.get('status') in {'uploading', 'uncertain'}))
+
+
+def record_upload(project_dir, result_data):
+    with file_lock(DB_PATH.with_suffix('.lock')):
+        db = _load_db()
+        db[str(Path(project_dir).resolve())] = result_data
+        _save_db(db)

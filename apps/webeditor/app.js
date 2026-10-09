@@ -636,11 +636,13 @@ async function saveProject() {
       body: JSON.stringify(project),
     });
     const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "Save failed");
+    if (!res.ok || !data.ok) throw new Error(data.error || "Save failed");
+    project.revision = data.revision;
     setStatus("Saved editor_project.json");
   } catch (err) {
     setStatus(`Save failed: ${err.message}`);
     alert(err.message);
+    throw err;
   }
 }
 

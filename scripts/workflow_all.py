@@ -7,7 +7,6 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 PY = sys.executable
@@ -86,7 +85,7 @@ def main() -> int:
             run(scrape, allow_fail=False)
 
         out = run([PY, "-m", "echoforge", "project", "init-next"])
-        project = parse_project_dir(out) or latest_project()
+        project = parse_project_dir(out)
         if not project:
             raise SystemExit("Could not determine created project path. Run run.bat project list and pass --project manually.")
 
@@ -103,11 +102,12 @@ def main() -> int:
     if not args.skip_verselock:
         run([PY, "-m", "echoforge", "verselock", "sync", "--project", project])
 
-    run([PY, "scripts/prepare_editor_project.py", "--project", project, "--force"])
+    run([PY, "scripts/prepare_editor_project.py", "--project", project])
     run([PY, "scripts/project_status.py", "--project", project])
 
     if not args.skip_editor_open:
-        return run([PY, "scripts/open_webeditor.py", "--project", project]) or 0
+        run([PY, "scripts/open_webeditor.py", "--project", project])
+        return 0
 
     print("\nEditor not opened because --skip-editor-open was used.")
     print(f"Open later with: run.bat webeditor open --project \"{project}\"")

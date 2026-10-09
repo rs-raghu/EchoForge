@@ -48,15 +48,24 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def connect(path: Path = SONGSCOUT_DB_PATH) -> sqlite3.Connection:
+class ManagedConnection(sqlite3.Connection):
+    def __exit__(self, *args):
+        try:
+            return super().__exit__(*args)
+        finally:
+            self.close()
+
+
+def connect(path: Path | None = None) -> sqlite3.Connection:
+    path = path or SONGSCOUT_DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=30, factory=ManagedConnection)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
 
-def init_database(path: Path = SONGSCOUT_DB_PATH) -> None:
+def init_database(path: Path | None = None) -> None:
     with connect(path) as conn:
         conn.execute(CREATE_SONGS_SQL)
         conn.execute(CREATE_METADATA_SQL)
@@ -356,10 +365,14 @@ def record_scrape_result(
     row_count: int = 0,
     clean_count: int = 0,
     reason: str = "",
+    local_date: str | None = None,
+    window: str | None = None,
 ) -> None:
     init_database()
     timestamp = now_iso()
-    today = datetime.now().astimezone().date().isoformat()
+    from echoforge.stages.songscout.policy import today_local, current_window_start
+    now = today_local()
+    today = local_date or now.date().isoformat()
     with connect() as conn:
         set_metadata("last_scrape_attempt_at", timestamp, conn=conn)
         set_metadata("last_scrape_status", "success" if success else "failed", conn=conn)
@@ -368,8 +381,11 @@ def record_scrape_result(
         if reason:
             set_metadata("last_scrape_reason", reason, conn=conn)
         if success:
+            if clean_count <= 0:
+                raise ValueError("An empty chart cannot complete a refresh cycle")
             set_metadata("last_successful_scrape_at", timestamp, conn=conn)
             set_metadata("last_successful_scrape_date", today, conn=conn)
+            set_metadata("last_successful_scrape_window", window or current_window_start(now), conn=conn)
         conn.commit()
 
 

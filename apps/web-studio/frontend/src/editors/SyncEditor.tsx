@@ -188,6 +188,7 @@ export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorPr
   }
 
   async function nudge(delta: number) {
+    if (!project) return;
     setBusy(`nudge-${delta}`);
     setError(null);
     try {
@@ -214,6 +215,7 @@ export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorPr
   }
 
   async function validateCurrent() {
+    if (!project) return;
     setBusy("validate");
     setError(null);
     try {
@@ -239,6 +241,7 @@ export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorPr
   }
 
   async function saveDraft() {
+    if (!project) return;
     setBusy("draft");
     setError(null);
     try {
@@ -255,6 +258,7 @@ export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorPr
   }
 
   async function saveCurrent() {
+    if (!project) return;
     setBusy("save");
     setError(null);
     try {
@@ -272,6 +276,7 @@ export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorPr
   }
 
   async function approveCurrent() {
+    if (!project) return;
     setBusy("approve");
     setError(null);
     try {

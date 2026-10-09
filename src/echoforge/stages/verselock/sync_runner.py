@@ -194,11 +194,11 @@ def run_whisper_fallback_sync(
         use_segments=False,
     )
 
-    ok = bool(transfer.get("ok"))
+    ok = bool(transfer.get("ok") and transfer.get("promoted_to_final"))
     result = {
         "ok": ok,
         "mode": "whisper_timestamp_transfer_sync",
-        "reason": transfer.get("reason"),
+        "reason": transfer.get("reason") or (None if ok else "Generated timing candidate requires review and explicit promotion."),
         "output_lrc": transfer.get("output_lrc"),
         "output_json": transfer.get("output_json"),
         "line_count": transfer.get("lyrics_line_count") or transfer.get("line_count"),
@@ -237,7 +237,8 @@ def run_verselock_sync(
         _update_project_state(project_dir, result)
         _update_asset_manifest(project_dir, result)
         _mark_song(project_dir, result)
-        return result
+        if result.get("ok"):
+            return result
 
     return run_whisper_fallback_sync(
         project_dir,
@@ -246,5 +247,5 @@ def run_verselock_sync(
         compute_type=compute_type,
         language=language,
         beam_size=beam_size,
-        promote=True,
+        promote=False,
     )

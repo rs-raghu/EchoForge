@@ -486,7 +486,12 @@ def prepare_editor_project(project: str | Path, force: bool = False) -> dict[str
     preview_path = editor_dir / "preview.html"
     report_path = editor_dir / "prepare_report.json"
 
-    if not force and editor_project_path.exists() and timeline_path.exists() and preview_path.exists():
+    if not force and editor_project_path.exists():
+        # An edited V2 timeline need not have Stage 1 preview/timeline artifacts.
+        # Preserve it rather than rebuilding over the user's manual work.
+        from echoforge.core.storage import read_json
+        from echoforge.core.security import validate_editor
+        validate_editor(read_json(editor_project_path), project_dir)
         return {
             "ok": True,
             "mode": "prepare_editor_project",

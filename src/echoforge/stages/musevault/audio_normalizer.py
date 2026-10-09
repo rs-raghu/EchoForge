@@ -1,139 +1,47 @@
 from __future__ import annotations
-
-import json
-import shutil
+import os
 import subprocess
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from echoforge.core.media import audio_duration
+from echoforge.core.storage import atomic_json, file_lock
 
-AUDIO_NAMES = [
-    "source_audio.m4a",
-    "source_audio.mp3",
-    "source_audio.wav",
-    "source_audio.webm",
-    "source_audio.mp4",
-]
+AUDIO_NAMES = ["source_audio.m4a", "source_audio.mp3", "source_audio.wav", "source_audio.webm", "source_audio.mp4"]
 
 
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+def find_source_audio(project_dir):
+    folder = Path(project_dir) / "audio"
+    candidates = [folder / name for name in AUDIO_NAMES]
+    candidates.extend(sorted(folder.glob("source_audio.*")))
+    return next((p for p in candidates if audio_duration(p) is not None), None)
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-
-
-def find_source_audio(project_dir: str | Path) -> Path | None:
+def normalize_project_audio(project_dir, *, force=False):
     project_dir = Path(project_dir)
-    audio_dir = project_dir / "audio"
-    for name in AUDIO_NAMES:
-        p = audio_dir / name
-        if p.exists() and p.is_file():
-            return p
-    for p in sorted(audio_dir.glob("source_audio.*")):
-        if p.is_file():
-            return p
-    return None
-
-
-def normalize_project_audio(project_dir: str | Path, *, force: bool = False) -> dict[str, Any]:
-    """Guarantee project/audio/source_audio.m4a exists.
-
-    yt-dlp may download source_audio.mp4 or webm depending on availability.
-    VerseLock and render stages should consume source_audio.m4a consistently.
-    """
-    project_dir = Path(project_dir)
-    audio_dir = project_dir / "audio"
-    audio_dir.mkdir(parents=True, exist_ok=True)
-    status_path = audio_dir / "audio_normalization_status.json"
-    target = audio_dir / "source_audio.m4a"
-
-    source = find_source_audio(project_dir)
-    if not source:
-        result = {
-            "ok": False,
-            "stage": "audio_normalization",
-            "reason": "No source_audio file found in project/audio.",
-            "source": None,
-            "target": str(target),
-            "created_at": now_iso(),
-        }
-        _write_json(status_path, result)
+    folder = project_dir / "audio"
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / "source_audio.m4a"
+    with file_lock(folder / "normalization.lock"):
+        source = find_source_audio(project_dir)
+        result = {"ok": False, "stage": "audio_normalization", "source": str(source) if source else None,
+                  "target": str(target), "created_at": datetime.now(timezone.utc).isoformat()}
+        if not source:
+            result["reason"] = "No valid audio stream found in project/audio (ffprobe is required)."
+        elif source == target and not force:
+            result.update(ok=True, mode="already_m4a", path=str(target))
+        else:
+            temporary = folder / f".normalization-{uuid.uuid4().hex}.m4a"
+            try:
+                subprocess.run(["ffmpeg", "-y", "-i", str(source), "-vn", "-c:a", "aac", "-b:a", "192k", str(temporary)],
+                               check=True, capture_output=True, text=True, timeout=1800)
+                if audio_duration(temporary) is None:
+                    raise ValueError("Converted file contains no valid audio stream")
+                os.replace(temporary, target)
+                result.update(ok=True, mode="converted_to_m4a", path=str(target))
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                result["reason"] = f"Audio conversion failed: {exc}"
+            finally:
+                temporary.unlink(missing_ok=True)
+        atomic_json(folder / "audio_normalization_status.json", result)
         return result
-
-    if target.exists() and source.resolve() == target.resolve() and not force:
-        result = {
-            "ok": True,
-            "stage": "audio_normalization",
-            "mode": "already_m4a",
-            "source": str(source),
-            "target": str(target),
-            "path": str(target),
-            "created_at": now_iso(),
-        }
-        _write_json(status_path, result)
-        return result
-
-    if target.exists() and not force:
-        result = {
-            "ok": True,
-            "stage": "audio_normalization",
-            "mode": "reused_existing_m4a",
-            "source": str(source),
-            "target": str(target),
-            "path": str(target),
-            "created_at": now_iso(),
-        }
-        _write_json(status_path, result)
-        return result
-
-    if shutil.which("ffmpeg") is None:
-        result = {
-            "ok": False,
-            "stage": "audio_normalization",
-            "reason": "ffmpeg not found in PATH. Cannot convert source audio to m4a.",
-            "source": str(source),
-            "target": str(target),
-            "created_at": now_iso(),
-        }
-        _write_json(status_path, result)
-        return result
-
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(source),
-        "-vn",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        str(target),
-    ]
-    try:
-        completed = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        result = {
-            "ok": True,
-            "stage": "audio_normalization",
-            "mode": "converted_to_m4a",
-            "source": str(source),
-            "target": str(target),
-            "path": str(target),
-            "created_at": now_iso(),
-        }
-    except subprocess.CalledProcessError as exc:
-        result = {
-            "ok": False,
-            "stage": "audio_normalization",
-            "reason": "ffmpeg failed while converting source audio to m4a.",
-            "source": str(source),
-            "target": str(target),
-            "returncode": exc.returncode,
-            "stderr": exc.stderr[-4000:] if exc.stderr else "",
-            "created_at": now_iso(),
-        }
-    _write_json(status_path, result)
-    return result

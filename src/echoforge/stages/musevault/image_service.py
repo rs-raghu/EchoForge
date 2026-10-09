@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import math
 from pathlib import Path
-from typing import Iterable
 
 import requests
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps

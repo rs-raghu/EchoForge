@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
 
@@ -57,75 +56,11 @@ def build_youtube():
 
 
 def upload_video(project: Path, args: argparse.Namespace) -> dict[str, Any]:
-    from googleapiclient.http import MediaFileUpload
-
-    meta = metadata(project)
-    video = Path(args.video) if args.video else project / "renders" / "final_video.mp4"
-    thumb = Path(args.thumbnail) if args.thumbnail else project / "renders" / "upload_thumbnail.jpg"
-    if not video.is_absolute():
-        video = ROOT / video
-    if not thumb.is_absolute():
-        thumb = ROOT / thumb
-    if not video.exists():
-        raise FileNotFoundError(f"Rendered video not found: {video}")
-
-    visibility = args.visibility or args.privacy or "private"
-    status: dict[str, Any] = {
-        "privacyStatus": "private" if visibility == "schedule" else visibility,
-        "selfDeclaredMadeForKids": bool(meta.get("made_for_kids", False)),
-    }
-    if visibility == "schedule":
-        if not args.schedule_at:
-            raise ValueError("--schedule-at is required when visibility=schedule")
-        status["publishAt"] = args.schedule_at
-
-    body = {
-        "snippet": {
-            "title": args.title or meta.get("title") or "Lyrics Video",
-            "description": args.description or meta.get("description") or "",
-            "tags": [t for t in (args.tags.split(",") if args.tags else meta.get("tags", [])) if str(t).strip()],
-            "categoryId": str(args.category_id or meta.get("category_id") or "10"),
-        },
-        "status": status,
-    }
-
-    yt = build_youtube()
-    media = MediaFileUpload(str(video), chunksize=8 * 1024 * 1024, resumable=True, mimetype="video/mp4")
-    request = yt.videos().insert(part="snippet,status", body=body, media_body=media)
-    response = None
-    last_progress = 0
-    while response is None:
-        progress, response = request.next_chunk()
-        if progress:
-            pct = int(progress.progress() * 100)
-            if pct != last_progress:
-                last_progress = pct
-                print(json.dumps({"stage": "uploading", "progress": pct}, ensure_ascii=False), flush=True)
-    video_id = response.get("id", "")
-
-    thumb_result = None
-    if video_id and thumb.exists():
-        try:
-            thumb_media = MediaFileUpload(str(thumb), mimetype="image/jpeg")
-            thumb_result = yt.thumbnails().set(videoId=video_id, media_body=thumb_media).execute()
-        except Exception as exc:
-            thumb_result = {"ok": False, "error": str(exc)}
-
-    result = {
-        "ok": True,
-        "mode": "youtube_upload",
-        "video_id": video_id,
-        "url": f"https://www.youtube.com/watch?v={video_id}" if video_id else "",
-        "visibility": visibility,
-        "schedule_at": args.schedule_at or "",
-        "video": str(video),
-        "thumbnail": str(thumb) if thumb.exists() else "",
-        "thumbnail_result": thumb_result,
-        "uploaded_at": datetime.now(timezone.utc).isoformat(),
-        "metadata": body,
-    }
-    save_json(project / "upload" / "youtube_upload_report.json", result)
-    return result
+    from echoforge.stages.tubeharbor.youtube_uploader import upload_to_youtube
+    video = Path(args.video) if args.video else project / 'renders/final_video.mp4'
+    options = {key: value for key, value in vars(args).items() if value not in ('', None)}
+    options['visibility'] = args.visibility or args.privacy or 'private'
+    return upload_to_youtube(video, project, options)
 
 
 def main() -> int:
@@ -133,7 +68,7 @@ def main() -> int:
     ap.add_argument("--project", required=True)
     ap.add_argument("--video", default="")
     ap.add_argument("--thumbnail", default="")
-    ap.add_argument("--visibility", choices=["private", "public", "unlisted", "schedule"], default="private")
+    ap.add_argument("--visibility", choices=["private", "public", "unlisted", "schedule"], default=None)
     ap.add_argument("--privacy", choices=["private", "public", "unlisted", "schedule"], default=None)
     ap.add_argument("--schedule-at", default="")
     ap.add_argument("--title", default="")
@@ -148,13 +83,9 @@ def main() -> int:
     try:
         result = upload_video(project, args)
         print(json.dumps(result, indent=2, ensure_ascii=False))
-        # Mark project and SongScout as used after successful upload.
-        import subprocess
-        subprocess.call([sys.executable, "scripts/mark_project_uploaded.py", "--project", str(project), "--video-id", result.get("video_id", ""), "--url", result.get("url", "")], cwd=ROOT)
-        return 0
+        return 0 if result.get("ok") else 1
     except Exception as exc:
         result = {"ok": False, "mode": "youtube_upload", "reason": str(exc)}
-        save_json(project / "upload" / "youtube_upload_report.json", result)
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 1
 

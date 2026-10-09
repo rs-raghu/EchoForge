@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from echoforge.stages.songscout.database import get_metadata, has_any_songs, init_database
@@ -36,6 +36,10 @@ class ScrapeDecision:
     is_forced: bool = False
 
 
+def current_window_start(now: datetime) -> str:
+    return (now.date() - timedelta(days=(now.weekday() - FRIDAY) % 7)).isoformat()
+
+
 def should_scrape_today(force: bool = False) -> ScrapeDecision:
     init_database()
     now = today_local()
@@ -53,19 +57,17 @@ def should_scrape_today(force: bool = False) -> ScrapeDecision:
             is_forced=True,
         )
 
-    if now.weekday() != FRIDAY:
+    window = current_window_start(now)
+    completed = get_metadata("last_successful_scrape_window")
+    if not completed and last_successful_scrape_date:
+        try:
+            completed = current_window_start(datetime.combine(date.fromisoformat(last_successful_scrape_date), datetime.min.time()))
+        except ValueError:
+            pass
+    if completed and completed >= window:
         return ScrapeDecision(
             should_scrape=False,
-            reason=f"today is {weekday}; automatic scraping is allowed only on Friday",
-            today=today,
-            weekday=weekday,
-            last_successful_scrape_date=last_successful_scrape_date,
-        )
-
-    if last_successful_scrape_date == today:
-        return ScrapeDecision(
-            should_scrape=False,
-            reason="chart already scraped successfully today",
+            reason="chart already scraped successfully for the current Friday cycle",
             today=today,
             weekday=weekday,
             last_successful_scrape_date=last_successful_scrape_date,
@@ -73,7 +75,7 @@ def should_scrape_today(force: bool = False) -> ScrapeDecision:
 
     return ScrapeDecision(
         should_scrape=True,
-        reason="today is Friday and chart has not been scraped today",
+        reason=f"chart refresh pending for Friday cycle {window}",
         today=today,
         weekday=weekday,
         last_successful_scrape_date=last_successful_scrape_date,
@@ -84,9 +86,8 @@ def empty_database_message() -> str | None:
     if has_any_songs():
         return None
     decision = should_scrape_today(force=False)
-    if decision.weekday != "Friday":
+    if decision.should_scrape:
         return (
-            "SongScout database is empty. Today is not Friday, so automatic scraping is disabled. "
-            "Run `run.bat songscout scrape --force` once to initialize manually."
+            "SongScout database is empty. Run `run.bat songscout refresh` to initialize the current weekly cycle."
         )
     return None

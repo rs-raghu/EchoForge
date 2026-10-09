@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -129,7 +130,11 @@ def choose_title_artist(raw: dict[str, Any], lines: list[str]) -> tuple[str, str
 
 
 def unique_song_id(title: str, artist: str) -> str:
-    base = f"{normalize_key(title)}::{normalize_key(artist)}"
+    # Keep historical ASCII IDs; non-ASCII identities must not collapse to ::.
+    def identity(value):
+        value = unicodedata.normalize("NFC", normalize_space(value)).casefold()
+        return normalize_key(value) if value.isascii() else value
+    base = f"{identity(title)}::{identity(artist)}"
     return hashlib.sha256(base.encode("utf-8")).hexdigest()[:16]
 
 

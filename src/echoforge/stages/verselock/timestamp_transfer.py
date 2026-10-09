@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+import math
 import re
-import shutil
 import unicodedata
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -350,6 +350,14 @@ def timestamp_transfer_sync(
     }
 
     ok = len(transferred) > 0 and len(whisper_lines) >= max(8, int(len(lyric_lines) * 0.55))
+    # Structural acceptance is mandatory even for an explicit promotion.
+    duration = _read_json(transcript_path).get('duration')
+    bounds_ok = all(math.isfinite(x.start_seconds) and x.start_seconds >= 0
+                    and (duration is None or x.start_seconds < float(duration))
+                    and (x.end_seconds is None or x.end_seconds > x.start_seconds)
+                    for x in transferred)
+    ok = ok and bounds_ok
+    promote = bool(promote and ok)
     output_lrc = final_lrc if promote else candidate_lrc
     output_json = final_json if promote else candidate_json
     output_lrc.parent.mkdir(parents=True, exist_ok=True)

@@ -39,6 +39,9 @@ def main() -> int:
 
     head = args[0].lower()
 
+    if head == "studio":
+        return run([PY, "-m", "echoforge.studio", *args[1:]])
+
     if head == "all":
         return run([PY, "scripts/workflow_all.py", *args[1:]])
 

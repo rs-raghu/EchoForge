@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from echoforge.core.paths import APP_STATE_DIR, PROJECTS_DIR
+from echoforge.core.storage import atomic_json, file_lock
 from echoforge.stages.songscout.database import (
     get_all_songs,
     get_metadata,
@@ -108,8 +109,7 @@ def ensure_project_dirs(project_dir: Path) -> None:
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    atomic_json(path, payload)
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -234,7 +234,7 @@ def get_selected_projects_from_db(limit: int = 20) -> list[dict[str, Any]]:
     return out[:limit]
 
 
-def init_project_for_song(song: dict[str, Any], *, allow_existing: bool = True) -> dict[str, Any]:
+def _init_project_for_song(song: dict[str, Any], *, allow_existing: bool = True) -> dict[str, Any]:
     if not song:
         raise ValueError("Cannot initialize project: song is empty.")
 
@@ -248,7 +248,13 @@ def init_project_for_song(song: dict[str, Any], *, allow_existing: bool = True) 
     existing = find_project_by_song_id(song_id)
     if existing and allow_existing:
         project_dir = Path(existing["project_dir"])
-        mark_song_status(song_id, "selected", project_dir=str(project_dir), note="Existing project reused")
+        # Recover initialization interrupted between filesystem and DB updates.
+        ensure_project_dirs(project_dir)
+        if not (project_dir / "asset_manifest.json").exists():
+            write_json(project_dir / "asset_manifest.json", build_asset_manifest(project_dir))
+        current_song = get_song(song_id) or song
+        if current_song.get("status", "new") in {"new", "failed"}:
+            mark_song_status(song_id, "selected", project_dir=str(project_dir), note="Existing project initialization recovered")
         return {
             "ok": True,
             "created": False,
@@ -258,7 +264,7 @@ def init_project_for_song(song: dict[str, Any], *, allow_existing: bool = True) 
             "song": song,
         }
 
-    project_number = get_next_project_number()
+    project_number = max(get_next_project_number(), get_highest_existing_project_number() + 1)
     project_id = build_project_id(project_number, title, artist)
     project_dir = PROJECTS_DIR / project_id
 
@@ -297,23 +303,23 @@ def init_project_for_song(song: dict[str, Any], *, allow_existing: bool = True) 
     }
 
 
-def init_next_project(*, include_failed: bool = False, allow_existing: bool = True) -> dict[str, Any]:
-    song = get_next_song(include_failed=include_failed)
-    if not song:
-        return {
-            "ok": False,
-            "created": False,
-            "reason": "No available song with status new found.",
-        }
-    return init_project_for_song(song, allow_existing=allow_existing)
+def init_project_for_song(song, *, allow_existing=True):
+    with file_lock(APP_STATE_DIR / "project_allocation.lock"):
+        return _init_project_for_song(song, allow_existing=allow_existing)
 
 
-def init_project_by_song_id(song_id: str, *, allow_existing: bool = True) -> dict[str, Any]:
-    song = get_song(song_id)
-    if not song:
-        return {
-            "ok": False,
-            "created": False,
-            "reason": f"Song not found: {song_id}",
-        }
-    return init_project_for_song(song, allow_existing=allow_existing)
+def init_next_project(*, include_failed=False, allow_existing=True):
+    # Select, allocate, persist and mark selected under the same OS-owned lock.
+    with file_lock(APP_STATE_DIR / "project_allocation.lock"):
+        song = get_next_song(include_failed=include_failed)
+        if not song:
+            return {"ok": False, "created": False, "reason": "No available song with status new found."}
+        return _init_project_for_song(song, allow_existing=allow_existing)
+
+
+def init_project_by_song_id(song_id, *, allow_existing=True):
+    with file_lock(APP_STATE_DIR / "project_allocation.lock"):
+        song = get_song(song_id)
+        if not song:
+            return {"ok": False, "created": False, "reason": f"Song not found: {song_id}"}
+        return _init_project_for_song(song, allow_existing=allow_existing)

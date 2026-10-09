@@ -6,7 +6,7 @@ import { EmptyPanel, type StudioPageProps } from "./ViewSharedComponents";
 const aspectRatios = ["16:9", "9:16", "1:1"];
 const resolutions = ["720p", "1080p", "1440p"];
 const fpsOptions = [24, 30, 60];
-const animations = ["fade", "slide_up", "scale_pop", "karaoke_fill", "word_by_word", "typewriter", "none"];
+const animations = ["none", "fade"];
 const positions = ["center", "bottom", "top"];
 
 export function TemplatesView({ project, onProjectChanged, setError }: StudioPageProps) {

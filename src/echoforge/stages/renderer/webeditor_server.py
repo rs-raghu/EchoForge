@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+from echoforge.core.security import asset_path, validate_editor
 
 ROOT_DIR = Path(__file__).resolve().parents[4]
 
@@ -42,12 +43,7 @@ def fnum(value: Any, default: float = 0.0) -> float:
 def resolve_path(project_dir: Path, value: Any) -> Path | None:
     if not value:
         return None
-    p = Path(str(value))
-    candidates = [p] if p.is_absolute() else [project_dir / p, ROOT_DIR / p]
-    for c in candidates:
-        if c.exists():
-            return c.resolve()
-    return candidates[-1].resolve() if candidates else None
+    return asset_path(project_dir,value,ROOT_DIR)
 
 
 def rel_to(base: Path, path: Path | None) -> str:
@@ -200,6 +196,7 @@ class App:
     def save(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict) or not isinstance(payload.get("clips"), list):
             return {"ok": False, "reason": "Invalid editor project payload."}
+        validate_editor(payload,self.project_dir)
         style = default_lyric_style()
         payload["clips"] = [normalize_clip(c, i, style) for i, c in enumerate(payload["clips"]) if isinstance(c, dict)]
         payload["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -221,7 +218,6 @@ def handler_factory(app: App):
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(body)
 
@@ -284,7 +280,11 @@ def handler_factory(app: App):
                 self.send_json(404, {"ok": False, "reason": "Not found"})
                 return
             try:
-                payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0") or "0")).decode("utf-8"))
+                origin=self.headers.get('Origin')
+                if origin and origin != 'http://' + self.headers.get('Host',''): raise ValueError('Same-origin required')
+                length=int(self.headers.get('Content-Length','0'))
+                if not 0 < length <= 8*1024*1024: raise ValueError('Invalid request size')
+                payload=json.loads(self.rfile.read(length).decode('utf-8'))
             except Exception as exc:
                 self.send_json(400, {"ok": False, "reason": str(exc)})
                 return

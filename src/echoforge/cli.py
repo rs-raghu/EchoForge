@@ -14,19 +14,16 @@ from echoforge.core.project_builder import (
 from echoforge.orchestrator import doctor, init_project, run_all_placeholder, show_status, show_workflow
 from echoforge.stages.musevault.asset_collector import collect_assets
 from echoforge.stages.musevault.metadata_review import review_metadata
-from echoforge.stages.songscout.cleaner import clean_raw_file, clean_rows
+from echoforge.stages.songscout.cleaner import clean_raw_file
 from echoforge.stages.songscout.database import (
     export_database_json,
     get_all_metadata,
     init_database,
     mark_song_status,
-    record_scrape_result,
     reset_workflow_status,
-    upsert_songs,
     workflow_counts,
 )
 from echoforge.stages.songscout.policy import empty_database_message, should_scrape_today
-from echoforge.stages.songscout.scraper import delete_transient_debug_files, scrape_youtube_charts
 from echoforge.stages.songscout.selector import get_next_song, list_songs, mark_song_skipped
 
 SONG_STATUSES = ["new", "selected", "assets_ready", "synced", "rendered", "uploaded", "used", "skipped", "failed"]
@@ -34,6 +31,8 @@ SONG_STATUSES = ["new", "selected", "assets_ready", "synced", "rendered", "uploa
 
 def print_json(payload: Any) -> None:
     print(json.dumps(payload, indent=2, ensure_ascii=False))
+    if isinstance(payload, dict) and payload.get("ok") is False:
+        raise SystemExit(1)
 
 
 def print_song(song: dict[str, Any] | None) -> None:
@@ -52,17 +51,8 @@ def print_song(song: dict[str, Any] | None) -> None:
 
 
 def run_songscout_refresh(*, force: bool, max_songs: int, show_browser: bool) -> dict[str, Any]:
-    init_database()
-    decision = should_scrape_today(force=force)
-    if not decision.should_scrape:
-        return {"ok": True, "scraped": False, "reason": decision.reason, "today": decision.today, "weekday": decision.weekday, "last_successful_scrape_date": decision.last_successful_scrape_date}
-
-    raw_rows = scrape_youtube_charts(max_songs=max_songs, headless=not show_browser)
-    clean_songs = clean_rows(raw_rows)
-    result = upsert_songs(clean_songs)
-    record_scrape_result(success=True, row_count=len(raw_rows), clean_count=len(clean_songs), reason=decision.reason)
-    delete_transient_debug_files()
-    return {"ok": True, "scraped": True, "reason": decision.reason, "raw_rows": len(raw_rows), "clean_songs": len(clean_songs), **result}
+    from echoforge.stages.songscout.refresh import refresh_chart
+    return refresh_chart(force=force, max_songs=max_songs, show_browser=show_browser)
 
 
 def command_songscout_status(_: argparse.Namespace) -> None:
@@ -151,8 +141,8 @@ def add_songscout_parser(subparsers: argparse._SubParsersAction) -> None:
     sub = songscout.add_subparsers(dest="songscout_command", required=True)
 
     p = sub.add_parser("status", help="Show SongScout counts and Friday scrape policy"); p.set_defaults(func=command_songscout_status)
-    p = sub.add_parser("refresh", help="Scrape only if Friday and not already scraped today"); p.add_argument("--max-songs", type=int, default=100); p.add_argument("--show-browser", action="store_true"); p.set_defaults(func=command_songscout_refresh)
-    p = sub.add_parser("scrape", help="Manual scrape. Use --force outside Friday"); p.add_argument("--force", action="store_true"); p.add_argument("--max-songs", type=int, default=100); p.add_argument("--show-browser", action="store_true"); p.set_defaults(func=command_songscout_scrape)
+    p = sub.add_parser("refresh", help="Refresh once per Friday cycle, including missed executions"); p.add_argument("--max-songs", type=int, default=100); p.add_argument("--show-browser", action="store_true"); p.set_defaults(func=command_songscout_refresh)
+    p = sub.add_parser("scrape", help="Manual scrape. Use --force to repeat the current cycle"); p.add_argument("--force", action="store_true"); p.add_argument("--max-songs", type=int, default=100); p.add_argument("--show-browser", action="store_true"); p.set_defaults(func=command_songscout_scrape)
     p = sub.add_parser("clean", help="Clean latest raw scrape JSON only"); p.set_defaults(func=command_songscout_clean)
     p = sub.add_parser("top", help="Show next unused top-rank song"); p.add_argument("--include-failed", action="store_true"); p.set_defaults(func=command_songscout_top)
     p = sub.add_parser("list", help="List songs"); p.add_argument("--limit", type=int, default=20); p.add_argument("--status", choices=SONG_STATUSES, default=None); p.set_defaults(func=command_songscout_list)

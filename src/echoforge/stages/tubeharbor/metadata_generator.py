@@ -363,6 +363,7 @@ def _build_description(song_title: str, artist_text: str, artists: List[str], ly
     search_lines = _dedupe(search_lines)
 
     lyrics_block = lyrics_text.strip()
+    search_block = "\n".join(search_lines)
     description = (
         f"{'  '.join(hashtags)}\n"
         f"🎶{song_title}  -  {artist_text} (Lyrics)\n"
@@ -371,7 +372,7 @@ def _build_description(song_title: str, artist_text: str, artists: List[str], ly
         "👍🏽 Please leave a like, share, and appreciate all the support!\n"
         "________________________________________________________________________\n\n"
         f"📋 Tags: {' '.join(desc_tag_hashes)}\n\n"
-        f"{'\n'.join(search_lines)}\n\n"
+        f"{search_block}\n\n"
         "🎤 Lyrics:\n"
         f"{lyrics_block}"
     )

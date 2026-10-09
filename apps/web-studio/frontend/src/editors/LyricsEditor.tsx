@@ -148,7 +148,7 @@ export function LyricsEditor({ project, onProjectChanged, setError }: LyricsEdit
   }
 
   function undo() {
-    const previous = undoStack.at(-1);
+    const previous = undoStack[undoStack.length - 1];
     if (!previous) {
       return;
     }
@@ -159,7 +159,7 @@ export function LyricsEditor({ project, onProjectChanged, setError }: LyricsEdit
   }
 
   function redo() {
-    const next = redoStack.at(-1);
+    const next = redoStack[redoStack.length - 1];
     if (!next) {
       return;
     }
@@ -188,6 +188,7 @@ export function LyricsEditor({ project, onProjectChanged, setError }: LyricsEdit
   }
 
   async function saveCurrent() {
+    if (!project) return;
     setBusy("save");
     try {
       const next = await saveLyrics(project.id, lines, false);
@@ -204,6 +205,7 @@ export function LyricsEditor({ project, onProjectChanged, setError }: LyricsEdit
   }
 
   async function approveCurrent() {
+    if (!project) return;
     setBusy("approve");
     try {
       const next = await approveLyrics(project.id, lines);

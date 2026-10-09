@@ -5,6 +5,8 @@ import json
 import shutil
 import subprocess
 from dataclasses import asdict, dataclass
+from echoforge.core.media import fingerprint, audio_duration
+from echoforge.core.storage import atomic_json
 from pathlib import Path
 from typing import Any
 
@@ -42,8 +44,7 @@ class WhisperAdvancedResult:
 
 
 def _json_dump(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')
+    atomic_json(path, data)
 
 
 def _format_ts(seconds: float) -> str:
@@ -72,7 +73,12 @@ def _ffmpeg_exists() -> bool:
 def _prepare_cpu_audio(project_dir: Path, audio_path: Path, force: bool) -> Path:
     """Create 16kHz mono WAV for more stable CPU ASR."""
     out = project_dir / 'sync' / 'whisper_input_16k_mono.wav'
-    if out.exists() and not force:
+    signature = out.with_suffix('.source.json')
+    try:
+        cached = json.loads(signature.read_text())
+    except (OSError, ValueError):
+        cached = {}
+    if not force and cached.get('sha256') == fingerprint(audio_path) and audio_duration(out):
         return out
     if not _ffmpeg_exists():
         return audio_path
@@ -87,6 +93,7 @@ def _prepare_cpu_audio(project_dir: Path, audio_path: Path, force: bool) -> Path
         str(out),
     ]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    atomic_json(signature, {'sha256': fingerprint(audio_path)})
     return out
 
 
@@ -208,8 +215,20 @@ def run_advanced_whisper_probe(
     output_segment_lrc = sync_dir / 'whisper_segment_rough_lrc.lrc'
     report_path = sync_dir / 'whisper_advanced_report.json'
 
-    if output_json.exists() and output_word_lrc.exists() and not force:
+    signature = {'audio_sha256': fingerprint(audio_path), 'model_size': model_size,
+                 'compute_type': compute_type, 'requested_language': language,
+                 'beam_size': beam_size, 'vad_filter': vad_filter}
+    try:
         data = json.loads(output_json.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        data = {}
+    valid_cache = (all(data.get(k) == v for k, v in signature.items())
+                   and len(data.get('words') or []) >= 8
+                   and output_word_lrc.is_file() and output_segment_lrc.is_file()
+                   and bool(output_word_lrc.read_text(encoding='utf-8').strip())
+                   and data.get('word_lrc_sha256') == fingerprint(output_word_lrc)
+                   and data.get('segment_lrc_sha256') == fingerprint(output_segment_lrc))
+    if valid_cache and not force:
         result = WhisperAdvancedResult(
             ok=True,
             mode='whisper_advanced_probe',
@@ -301,6 +320,9 @@ def run_advanced_whisper_probe(
     word_lines = _write_word_grouped_lrc(output_word_lrc, words)
 
     data = {
+        **signature,
+        'word_lrc_sha256': fingerprint(output_word_lrc),
+        'segment_lrc_sha256': fingerprint(output_segment_lrc),
         'engine': 'faster-whisper',
         'model_size': model_size,
         'compute_type': compute_type,
