@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from echoforge.core.storage import atomic_json, file_lock, read_json
 from echoforge.stages.tubeharbor.youtube_uploader import privacy
+from echoforge.stages.tubeharbor.upload_options import normalize_upload_options, resolve_upload_options, persist_upload_options
 
 _JOBS = {}
 _LOCK = threading.RLock()
@@ -94,12 +95,7 @@ def project_job_status(project):
 
 def normalize_options(options):
     if not isinstance(options, dict): raise ValueError('Job options must be an object')
-    merged={**(options.get('metadata') or {}), **options}
-    for canonical, aliases in {'scheduleAt':['schedule_at','schedule_time','scheduleTime','publishAt'],
-                               'categoryId':['category_id'], 'madeForKids':['made_for_kids']}.items():
-        for alias in aliases:
-            if not merged.get(canonical) and merged.get(alias) is not None:
-                merged[canonical]=merged[alias]
+    merged=normalize_upload_options(options)
     from echoforge.core.security import number
     merged['fps']=int(number(merged.get('fps', 24), 'fps', 1, 60))
     merged['crf']=int(number(merged.get('crf', 20), 'crf', 0, 51))
@@ -111,7 +107,7 @@ def normalize_options(options):
 
 def start_render_upload_job(project_dir, options, *, background=True):
     project=Path(project_dir).resolve()
-    options=normalize_options(options)
+    options=normalize_options(resolve_upload_options(project, options))
     def queue(jobs):
         for existing in jobs.values():
             if existing.get('project_dir') == str(project) and existing.get('status') in _ACTIVE_STATUSES:
@@ -123,6 +119,7 @@ def start_render_upload_job(project_dir, options, *, background=True):
              'project_dir':str(project), 'options':options, 'owner_pid':os.getpid(), 'owner_session':_SESSION,
              'created_at':now(), 'updated_at':now(), 'logs':[{'time':now(), 'message':'Render job queued'}]}
         jobs[jid]=job
+        persist_upload_options(project, options)
         return dict(job)
     job=_mutate(queue)
     if not job.get('already_running'):

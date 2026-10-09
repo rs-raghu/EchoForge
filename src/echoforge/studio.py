@@ -441,8 +441,8 @@ def upload_metadata(project_id: str):
     path=project_path(project_id); stored=read_json(path/'upload/youtube_metadata.json',{})
     meta=stored.get('metadata',stored); report=read_json(path/'upload/youtube_upload_report.json',{})
     return {"projectId":project_id,"title":meta.get('title',detail(path)['title']+' (Lyrics)'),"description":meta.get('description',''),"tags":meta.get('tags',[]),
-            "privacy":meta.get('privacy','private'),"madeForKids":meta.get('madeForKids',meta.get('made_for_kids',False)),"playlist":meta.get('playlist',''),
-            "thumbnailPath":meta.get('thumbnailPath',''),"scheduleTime":meta.get('scheduleTime',''),"metadataPath":str(path/'upload/youtube_metadata.json'),
+            "privacy":meta.get('visibility',meta.get('privacy','private')),"madeForKids":meta.get('madeForKids',meta.get('made_for_kids',False)),"playlist":meta.get('playlist',''),
+            "thumbnailPath":meta.get('thumbnailPath',''),"scheduleTime":meta.get('scheduleAt',meta.get('scheduleTime','')),"metadataPath":str(path/'upload/youtube_metadata.json'),
             "publishedUrl":report.get('url','') if report.get('ok') else ''}
 
 

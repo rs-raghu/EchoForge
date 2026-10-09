@@ -12,7 +12,7 @@ def upload_video(project: Path, args: argparse.Namespace) -> dict[str, Any]:
     from echoforge.stages.tubeharbor.youtube_uploader import upload_to_youtube
     video = Path(args.video) if args.video else project / 'renders/final_video.mp4'
     options = {key: value for key, value in vars(args).items() if value not in ('', None)}
-    options['visibility'] = args.visibility or args.privacy or 'private'
+    if args.visibility or args.privacy: options['visibility'] = args.visibility or args.privacy
     return upload_to_youtube(video, project, options)
 
 

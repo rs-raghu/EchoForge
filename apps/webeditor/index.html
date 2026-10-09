@@ -287,7 +287,7 @@ body.ef-rendering .ef-ru-actions::after {
           <button type="button" data-close>Close</button>
         </div>
         <div class="efru-body">
-          <div class="efru-status" data-status>Generating YouTube metadata...</div>
+          <div class="efru-status" data-status>Loading saved upload settings...</div>
           <div class="efru-field">
             <label>Visibility</label>
             <select data-visibility>
@@ -347,8 +347,18 @@ body.ef-rendering .ef-ru-actions::after {
     overlay.querySelector("[data-title]").value = metadata.title || "";
     overlay.querySelector("[data-description]").value = metadata.description || "";
     overlay.querySelector("[data-tags]").value = Array.isArray(metadata.tags) ? metadata.tags.join(", ") : (metadata.tags || "");
-    overlay.querySelector("[data-category]").value = metadata.category_id || metadata.categoryId || "10";
-    overlay.querySelector("[data-kids]").value = String(!!metadata.made_for_kids);
+    overlay.querySelector("[data-category]").value = metadata.categoryId ?? metadata.category_id ?? "10";
+    overlay.querySelector("[data-kids]").value = String(metadata.madeForKids ?? metadata.made_for_kids ?? false);
+    const scheduled = metadata.scheduleAt ?? metadata.scheduleTime ?? metadata.schedule_at ?? "";
+    overlay.querySelector("[data-visibility]").value = scheduled ? "schedule" : (metadata.visibility ?? metadata.privacy ?? metadata.privacyStatus ?? "private");
+    if (scheduled) {
+      const date = new Date(scheduled);
+      if (!Number.isNaN(date.getTime())) {
+        const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+        overlay.querySelector("[data-schedule]").value = local.toISOString().slice(0, 16);
+      }
+    }
+    overlay.querySelector("[data-visibility]").dispatchEvent(new Event("change"));
   }
 
   function getModalMetadata(overlay) {
@@ -368,19 +378,24 @@ body.ef-rendering .ef-ru-actions::after {
   async function openRenderUploadModal(defaultUpload) {
     const overlay = makeModal(defaultUpload);
     const status = overlay.querySelector("[data-status]");
+    const inputs = overlay.querySelectorAll("input, textarea, select, .efru-actions button");
+    inputs.forEach((input) => input.disabled = true);
     try {
       const data = await api("/api/youtube-metadata", {});
       fillModal(overlay, data.metadata || {});
-      status.textContent = data.full?.source === "gemini+template"
+      status.textContent = data.full?.approved ? "Saved upload settings loaded. Review before rendering." : data.full?.source === "gemini+template"
         ? "Metadata generated with Gemini + template. Review before rendering."
         : "Metadata generated from template. Review before rendering.";
     } catch (err) {
       status.textContent = "Metadata generation failed: " + err.message + "\nYou can still type metadata manually.";
+    } finally {
+      inputs.forEach((input) => input.disabled = false);
     }
 
     async function start(upload) {
       const visibility = overlay.querySelector("[data-visibility]").value;
       let schedule_at = overlay.querySelector("[data-schedule]").value;
+      if (visibility !== "schedule") schedule_at = "";
       if (schedule_at) schedule_at = new Date(schedule_at).toISOString();
       if (visibility === "schedule" && !schedule_at) {
         status.textContent = "Please select schedule date and time.";
@@ -411,7 +426,7 @@ body.ef-rendering .ef-ru-actions::after {
         const timer = setInterval(async () => {
           try {
             const s = await api("/api/render-upload/status");
-            status.textContent = `Stage: ${s.stage || "unknown"}\nRunning: ${!!s.running}\n${s.error ? "Error: " + s.error : ""}\n${s.rendered_video ? "Video: " + s.rendered_video : ""}\n${s.upload?.url ? "YouTube: " + s.upload.url : ""}`;
+            status.textContent = `Stage: ${s.stage || "unknown"}\nRunning: ${!!s.running}\n${s.error || s.reason ? "Error: " + (s.error || s.reason) : ""}\n${s.rendered_video ? "Video: " + s.rendered_video : ""}\n${s.youtube_url ? "YouTube: " + s.youtube_url : ""}`;
             if (!s.running && s.ok !== null && s.ok !== undefined) {
               clearInterval(timer);
               setRenderButtonsBusy(false);
