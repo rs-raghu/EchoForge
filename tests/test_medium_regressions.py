@@ -152,3 +152,13 @@ def test_declared_python_310_syntax():
         for path in (root/folder).rglob('*.py'):
             ast.parse(path.read_text(encoding='utf-8'),filename=str(path),feature_version=(3,10))
 
+
+def test_all_source_modules_import():
+    import importlib
+    root=Path(__file__).resolve().parents[1]/'src'
+    for path in root.rglob('*.py'):
+        if path.name=='__main__.py': continue
+        parts=list(path.relative_to(root).with_suffix('').parts)
+        if parts[-1]=='__init__': parts.pop()
+        importlib.import_module('.'.join(parts))
+

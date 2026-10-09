@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from echoforge.core.storage import project_lock
+
 
 from echoforge.core.storage import atomic_text
 
