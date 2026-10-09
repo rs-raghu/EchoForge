@@ -36,3 +36,17 @@ Tests use temporary projects/databases, mocked chart/lyrics/ASR/upload providers
 ## Validation boundaries
 
 Live chart extraction, lyric relevance, full ASR model accuracy, OAuth consent/refresh, Gemini and YouTube publication need a controlled integration acceptance pass. Automated checks validate local contracts and recovery, not arbitrary external-service responses or every visual font/platform combination. Optional Whisper dependencies are isolated from the standard installation so a Torch/model issue does not prevent the core application from starting.
+
+## Chart loading failures
+
+The Charts HTML can return HTTP 200 while its separate chart-data request fails with HTTP 429. This leaves a blank application rather than an empty published chart. SongScout now reports that distinction and exits unsuccessfully without a traceback for expected chart loading failures. It does not automatically retry a rate-limited service.
+
+The scraper waits up to 30 seconds for readable rows, uses Chromium's own browser version identity, retains rows from earlier scroll positions, and writes raw chart JSON atomically only after title/artist parsing succeeds. Blank pages, chart-data failures and unparseable rows preserve the previous raw file and database snapshot. Runtime lock files are ignored by Git.
+
+When rate-limited, wait before another attempt and check the chart in your regular browser. Once the site is available, retry from the repository folder with:
+
+```powershell
+.\run.bat all --force-scrape --show-browser
+```
+
+The visible-browser flag helps inspect consent or page errors; it does not guarantee removal of a rate limit. To continue an already prepared project without requesting a new chart, use `run.bat all --project "projects\YOUR_PROJECT"`; collection/synchronization still run unless explicitly skipped. This does not mark the missed chart refresh as completed.

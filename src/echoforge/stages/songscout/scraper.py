@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 from echoforge.core.config import settings
 from echoforge.core.paths import SONGSCOUT_DATA_DIR
+from echoforge.core.storage import atomic_json
 
 RAW_DATA_PATH = SONGSCOUT_DATA_DIR / "youtube_charts_raw.json"
 DEBUG_HTML_PATH = SONGSCOUT_DATA_DIR / "debug_latest_page.html"
@@ -18,6 +21,48 @@ DEBUG_TEXT_PATH = SONGSCOUT_DATA_DIR / "debug_latest_text.txt"
 DEBUG_SCREENSHOT_PATH = SONGSCOUT_DATA_DIR / "debug_latest_page.png"
 
 _CONSENT_RE = re.compile(r"Accept all|I agree|Agree|Accept|Reject all|No thanks", re.I)
+
+
+class ChartScrapeError(ValueError):
+    """Expected chart load failure, safe for the CLI to display without a traceback."""
+
+
+def _chart_request(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.hostname == 'charts.youtube.com' and parsed.path in {
+        '/youtubei/v1/browse', '/youtubei/v1/music/get_charts'}
+
+
+def _check_chart_failure(failures: list[dict[str, Any]]) -> None:
+    if not failures: return
+    failure = failures[-1]
+    status = failure.get('status')
+    if status == 429:
+        retry = failure.get('retry_after')
+        hint = f' Retry-After: {retry}.' if retry else ''
+        raise ChartScrapeError(
+            'YouTube Charts rate-limited its chart-data request (HTTP 429). '
+            'No songs were received; the previous chart is preserved. '
+            'Wait before retrying and check the chart in your regular browser.' + hint)
+    if status:
+        raise ChartScrapeError(f'YouTube Charts chart-data request failed (HTTP {status}). '
+                              'The previous chart is preserved; retry after the service recovers.')
+    raise ChartScrapeError('YouTube Charts chart-data request could not connect. '
+                          'Check your connection; the previous chart is preserved.')
+
+
+def _wait_for_chart_rows(page, failures, timeout_ms):
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        rows = page.evaluate(EXTRACT_CHART_ROWS_JS)
+        if rows: return rows
+        _check_chart_failure(failures)
+        if time.monotonic() >= deadline:
+            raise ChartScrapeError('YouTube Charts loaded without readable song rows. '
+                                  'The page may be blank, require consent, or have changed its layout. '
+                                  'Check it in your browser or retry with --show-browser. '
+                                  'The previous chart is preserved.')
+        page.wait_for_timeout(min(500, max(1, int((deadline - time.monotonic()) * 1000))))
 
 EXTRACT_CHART_ROWS_JS = r"""
 () => {
@@ -237,33 +282,54 @@ def scrape_youtube_charts(
     max_songs: int | None = None,
     headless: bool = True,
     raw_output_path: Path = RAW_DATA_PATH,
+    load_timeout_ms: int = 30_000,
 ) -> list[dict[str, Any]]:
     url = url or settings.youtube_charts_url
-    max_songs = max_songs or settings.max_songs
+    max_songs = settings.max_songs if max_songs is None else max_songs
+    if not isinstance(max_songs, int) or not 1 <= max_songs <= 500:
+        raise ValueError('max_songs must be between 1 and 500')
+    if not isinstance(load_timeout_ms, int) or not 1 <= load_timeout_ms <= 60_000:
+        raise ValueError('load_timeout_ms must be between 1 and 60000')
+    from echoforge.stages.songscout.cleaner import clean_row, clean_rows
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
         context = browser.new_context(
             viewport={"width": 1440, "height": 1100},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
             locale="en-US",
         )
         page = context.new_page()
+        failures: list[dict[str, Any]] = []
+
+        def chart_response(response):
+            if _chart_request(response.url) and response.status >= 400:
+                failures.append({'status': response.status,
+                                 'retry_after': response.headers.get('retry-after')})
+
+        def chart_request_failed(request):
+            if _chart_request(request.url): failures.append({'status': None})
+
+        page.on('response', chart_response)
+        page.on('requestfailed', chart_request_failed)
 
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+            response = page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+            if response and response.status >= 400:
+                _check_chart_failure([{'status': response.status, 'retry_after': response.headers.get('retry-after')}])
             _dismiss_consent(page)
-            page.wait_for_timeout(5000)
+            raw_rows = _wait_for_chart_rows(page, failures, load_timeout_ms)
 
             last_height = 0
             stable_rounds = 0
             for _ in range(14):
+                if len(clean_rows(raw_rows)) >= max_songs: break
                 page.mouse.wheel(0, 1800)
                 page.wait_for_timeout(900)
+                _check_chart_failure(failures)
+                more_rows = page.evaluate(EXTRACT_CHART_ROWS_JS)
+                # Retain earlier rows if the site virtualizes its list while scrolling.
+                known = {json.dumps(row, sort_keys=True) for row in raw_rows}
+                raw_rows.extend(row for row in more_rows if json.dumps(row, sort_keys=True) not in known)
                 height = page.evaluate("document.body.scrollHeight")
                 if height == last_height:
                     stable_rounds += 1
@@ -273,10 +339,22 @@ def scrape_youtube_charts(
                 if stable_rounds >= 3:
                     break
 
-            page.wait_for_timeout(700)
-            raw_rows = page.evaluate(EXTRACT_CHART_ROWS_JS)
+            _check_chart_failure(failures)
+            valid_rows = []
+            seen_songs = set()
+            for index, row in enumerate(raw_rows, start=1):
+                song = clean_row(row, fallback_rank=index)
+                if song and song['id'] not in seen_songs:
+                    seen_songs.add(song['id'])
+                    valid_rows.append((song.get('rank') or index, row))
+            valid_rows.sort(key=lambda item: item[0])
+            raw_rows = [row for _, row in valid_rows[:max_songs]]
+            if not raw_rows:
+                raise ChartScrapeError('YouTube Charts rows could not be parsed into song titles and artists. '
+                                      'The chart layout may have changed; the previous chart is preserved.')
         except PlaywrightTimeoutError as exc:
-            raise RuntimeError("YouTube Charts page timed out while loading.") from exc
+            raise ChartScrapeError('YouTube Charts page timed out while loading. '
+                                  'Check your connection; the previous chart is preserved.') from exc
         finally:
             _save_debug_files(page)
             browser.close()
@@ -288,6 +366,5 @@ def scrape_youtube_charts(
         "rows": raw_rows[:max_songs],
     }
 
-    raw_output_path.parent.mkdir(parents=True, exist_ok=True)
-    raw_output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    atomic_json(raw_output_path, payload)
     return payload["rows"]

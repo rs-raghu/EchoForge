@@ -26,6 +26,7 @@ data/**/*.sqlite3
 data/**/*.db
 data/**/*.json
 data/**/*.log
+data/**/*.lock
 
 # Generated projects
 projects/*

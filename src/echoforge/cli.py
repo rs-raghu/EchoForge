@@ -241,7 +241,13 @@ def main() -> None:
     if not hasattr(args, "func"):
         parser.print_help()
         return
-    args.func(args)
+    from echoforge.stages.songscout.scraper import ChartScrapeError
+    try:
+        args.func(args)
+    except ChartScrapeError as exc:
+        import sys
+        print(f'SongScout: {exc}', file=sys.stderr)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":
