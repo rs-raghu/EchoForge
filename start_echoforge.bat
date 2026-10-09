@@ -1,13 +1,13 @@
 @echo off
 title EchoForge - Run All
-cd /d "D:\Hello World\Automations\EchoForge"
+cd /d "%~dp0"
 
 echo ==========================================
 echo        EchoForge - Full Workflow
 echo ==========================================
 echo.
 
-call run.bat all
+call "%~dp0run.bat" all
 
 echo.
 echo ==========================================

@@ -60,6 +60,36 @@ def test_thumbnail_failure_preserves_remote_success(remote):
     assert yt.videos.return_value.insert.call_count==1
 
 
+def test_approved_thumbnail_path_reaches_upload(remote, monkeypatch):
+    project,video,yt,request=remote
+    selected=project/'images/approved.png';selected.parent.mkdir();selected.write_bytes(b'MOCK THUMB')
+    monkeypatch.setitem(sys.modules,'googleapiclient.http',SimpleNamespace(MediaFileUpload=lambda path,**kw:SimpleNamespace(filename=str(path))))
+    assert uploader.upload_to_youtube(video,project,{'thumbnailPath':'images/approved.png'})['ok']
+    assert yt.thumbnails.return_value.set.call_args.kwargs['media_body'].filename==str(selected)
+
+
+@pytest.mark.parametrize('options',[{'thumbnailPath':'../.secrets/token.json'},{'madeForKids':'false'}])
+def test_invalid_approved_metadata_rejected_before_insert(remote,options):
+    project,video,yt,request=remote
+    with pytest.raises(ValueError): uploader.upload_to_youtube(video,project,options)
+    yt.videos.return_value.insert.assert_not_called()
+    assert not upload_db.get_upload(project)
+
+
+def test_upload_http_transport_has_timeout(tmp_path,monkeypatch):
+    from google.oauth2.credentials import Credentials
+    from googleapiclient import discovery
+    client=tmp_path/'client.json';client.write_text('FIXTURE')
+    token=tmp_path/'token.json';token.write_text('FIXTURE')
+    monkeypatch.setattr(uploader,'cred_paths',lambda project:(client,token))
+    monkeypatch.setattr(Credentials,'from_authorized_user_file',Mock(return_value=Mock(valid=True)))
+    build=Mock();monkeypatch.setattr(discovery,'build',build)
+    service,error=uploader.service(tmp_path)
+    assert error is None
+    assert build.call_args.kwargs['http'].http.timeout==60
+    assert build.call_args.kwargs['cache_discovery'] is False
+
+
 def test_render_failure_never_uploads_stale_file(isolated,monkeypatch):
     render=Mock(return_value={'ok':False,'reason':'Render rejected'})
     upload=Mock(); monkeypatch.setattr(render_jobs,'export_editor_project',render); monkeypatch.setattr(render_jobs,'upload_to_youtube',upload)

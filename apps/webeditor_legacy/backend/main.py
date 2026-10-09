@@ -219,13 +219,10 @@ def read_json(path: Path) -> dict[str, Any] | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except UnicodeDecodeError:
         return json.loads(path.read_text(encoding="utf-8-sig"))
-    except Exception:
-        return None
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    atomic_json(path, payload)
 
 def get_tubeharbor_dir() -> Path:
     """
@@ -831,10 +828,17 @@ def draw_lyric_clip_on_image(image: Image.Image, clip: dict[str, Any], width: in
     return True
 
 
+def track_enabled(project, track_id):
+    track=get_track(project,track_id)
+    return bool(track and track.get("visible") is not False and not track.get("muted")
+                and (not any(t.get("solo") for t in project.get("tracks",[])) or track.get("solo")))
+
+
 def normalized_lyric_clips(project: dict[str, Any], duration: float) -> list[dict[str, Any]]:
+    if not track_enabled(project, "lyrics"): return []
     clips = []
     for clip in (get_track(project, "lyrics") or {}).get("clips", []):
-        if clip.get("visible") is False or not (text := str(clip.get("text", "")).strip()):
+        if clip.get("visible") is False or not str(clip.get("text", "")).strip():
             continue
         start = max(0.0, float(clip.get("start", 0)))
         if start >= duration: continue
@@ -856,6 +860,7 @@ def normalized_audio_clips(project_dir: Path, project: dict[str, Any], duration:
     """
     assets = project.get("assets") or {}
     default_src = assets.get("audio")
+    if not track_enabled(project, "audio"): return []
     clips: list[dict[str, Any]] = []
 
     for clip in (get_track(project, "audio") or {}).get("clips", []):
@@ -1111,7 +1116,8 @@ def run_ffmpeg_render(project_dir: Path, project: dict[str, Any], skip_repair: b
     audio_timeline = build_audio_timeline_file(project_dir, project, temp_dir, ffmpeg, duration)
 
     filter_complex = f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,format=rgba[bg];[1:v]format=rgba[lyrics];[bg][lyrics]overlay=0:0:format=auto,format=yuv420p[vout]"
-    cmd = [ffmpeg, "-y", "-loop", "1", "-framerate", str(fps), "-i", str(bg_path), "-i", str(overlay["path"]), "-i", str(audio_timeline["path"]), "-t", f"{duration:.3f}", "-filter_complex", filter_complex, "-map", "[vout]", "-map", "2:a:0", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest", str(output_path := render_dir / "final_lyrics_video.mp4")]
+    background_input = ["-loop","1","-framerate",str(fps),"-i",str(bg_path)] if track_enabled(project,"background") else ["-f","lavfi","-i",f"color=c=white:s={width}x{height}:r={fps}"]
+    cmd = [ffmpeg, "-y", *background_input, "-i", str(overlay["path"]), "-i", str(audio_timeline["path"]), "-t", f"{duration:.3f}", "-filter_complex", filter_complex, "-map", "[vout]", "-map", "2:a:0", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest", str(output_path := render_dir / "final_lyrics_video.mp4")]
 
     if (res := subprocess.run(cmd, cwd=str(project_dir), capture_output=True, text=True)).returncode != 0:
         raise HTTPException(status_code=500, detail={"message": "FFmpeg final render failed", "stderr": res.stderr[-4000:]})

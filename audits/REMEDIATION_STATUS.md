@@ -12,14 +12,17 @@ All High findings now have implemented corrections, with isolated regression cov
 
 The supported Studio template animations are static and fade. Unsupported animations are removed from the selector rather than silently rendered incorrectly. Playlist assignment returns an explicit unsupported-operation error because the existing upload-only OAuth scope cannot manage playlists. Studio `run_full` stops at the timing review checkpoint; it does not automatically authorize publication.
 
-## Verification so far
+## Final verification
 
-- 74 automated checks passed in both the host environment and a fresh Python 3.13 environment; a further legacy Shift-click browser regression passed separately.
-- Real FFmpeg audio conversion and video rendering tested in temporary projects.
-- Chromium tests verify failed saves block rendering and approved title/tags/visibility reach the single job endpoint.
+- 88 automated checks passed in both the host environment and a fresh Python 3.13 environment. Final strengthened renderer-entry and portable-launcher checks also passed in the isolated Low regression run.
+- Real FFmpeg audio conversion, muted/silent audio output, command-line rendering and a complete Studio approval/design/final-render workflow tested in temporary projects.
+- Chromium tests verify failed saves block rendering, approved metadata reaches the job endpoint, delayed saves preserve newer text, metadata controls unlock after repeated saves, first Shift-click/range selection works, and mute/solo settings survive save/reopen.
 - Two independent Python processes refresh one weekly cycle once; a terminated worker releases its OS lock.
 - Studio TypeScript checking passes; its frontend builds with the declared local dependencies (`npm ci`, no reported npm vulnerabilities).
+- Both frontend builds and Studio TypeScript checks passed. The legacy build reports optional font fallback URLs missing at build time; its bundled TTF fallback remains available.
+- A fresh editable installation of studio/upload/test extras succeeded; pip check reported no broken requirements and CLI startup/import smoke checks passed. The fresh test environment emitted one Starlette test-client deprecation warning.
 - Live charts, lyric APIs, model downloads, OAuth, Gemini and YouTube publication have not been exercised. Production projects, secrets and databases are not test fixtures.
+- Python 3.10 syntax is validated. Python 3.10 runtime, Linux runtime and remote CI results are not locally confirmed; the GitHub connector returned no commit-status records.
 
 ## Medium-priority changes
 
@@ -28,6 +31,16 @@ All Medium findings now have corrections or an explicit documented acceptance po
 Validation: 18 new Medium regressions passed, delayed-save and repeat-metadata-save Chromium checks passed, legacy first Shift-click/range selection passed, both frontend builds passed, Studio TypeScript passed, Ruff F/E9 passed, Python 3.10 syntax parsing passed, and a fresh Python 3.13 install/import/pip-check/full-suite run passed. That fresh environment emitted one Starlette test-client deprecation warning; no functional failures occurred. CI execution and a Python 3.10 runtime run are still distinct verification steps.
 
 See [testing instructions and operational policies](../docs/RELIABILITY_TESTING.md). The timing-quality and current-chart ambiguities are resolved conservatively in code and documented, without claiming external lyric/ASR correctness.
+
+## Low-priority changes and final integration checks
+
+The Windows launcher now resolves its own checkout. The renderer module defines helpers before its executable entry point. Legacy mute/solo controls modify persistent track state, affect preview and exported audio, and restore after reopening. Legacy JSON persistence now uses atomic replacement and reports corruption explicitly. Browser checks and real FFmpeg amplitude checks verify these behaviors.
+
+Final integration review also validates project/style resource limits, forwards the approved thumbnail path through the uploader, rejects invalid thumbnail locations and made-for-kids types before insert, and gives the Google HTTP transport a 60-second socket timeout. Successful remote IDs remain durable before optional thumbnail handling.
+
+## Verification discipline
+
+The Medium checkpoint initially contained a missing import caught by the final static check. It was corrected immediately in b974f65, with a regression importing every source module. The final verification gate passes Ruff F/E9 across source, scripts, tests and the legacy backend before committing/pushing. The original audit documents remain unchanged as historical baseline evidence.
 
 ## Issue register
 
@@ -49,7 +62,7 @@ See [testing instructions and operational policies](../docs/RELIABILITY_TESTING.
 | RENDER-014 | High | Export differs from approved visual/audio edits | Implemented; isolated regression validation |
 | RENDER-015 | Medium | Missing clips produce invalid FFmpeg input indices | Implemented; regression checks and documented policy |
 | RENDER-016 | High | FFmpeg stderr can deadlock long renders | Implemented; isolated regression validation |
-| RENDER-017 | Low | Module entry executes before helper definitions | Pending lower-priority pass (some shared fixes already landed) |
+| RENDER-017 | Low | Module entry executes before helper definitions | Implemented; browser/subprocess/media regression validation |
 | STATE-018 | High | Running jobs permanently block after restart | Implemented; isolated regression validation |
 | INTEGRATION-019 | High | Render modal discards approved metadata and schedule | Implemented; isolated regression validation |
 | UPLOAD-020 | High | Primary upload bypasses duplicate protection | Implemented; isolated regression validation |
@@ -66,11 +79,35 @@ See [testing instructions and operational policies](../docs/RELIABILITY_TESTING.
 | CHART-031 | Medium | Numeric titles are treated as metrics | Implemented; regression checks and documented policy |
 | UPLOAD-032 | Medium | Privacy alias is ignored by default visibility | Implemented; regression checks and documented policy |
 | TIME-033 | Medium | Refresh completion uses host calendar zone | Implemented; regression checks and documented policy |
-| START-034 | Low | Launcher hardcodes obsolete checkout path | Pending lower-priority pass (some shared fixes already landed) |
+| START-034 | Low | Launcher hardcodes obsolete checkout path | Implemented; browser/subprocess/media regression validation |
 | UI-035 | Medium | First legacy Shift-click uses undeclared selection variable | Implemented; regression checks and documented policy |
-| UI-036 | Low | Legacy mute/solo controls do not affect audio | Pending lower-priority pass (some shared fixes already landed) |
+| UI-036 | Low | Legacy mute/solo controls do not affect audio | Implemented; browser/subprocess/media regression validation |
 | QA-037 | Medium | Automated regression test files are empty | Implemented; regression checks and documented policy |
 | BUILD-038 | Medium | Package omits direct runtime dependency declaration | Implemented; regression checks and documented policy |
 | STATE-039 | Medium | JSON state writes are not crash-safe | Implemented; regression checks and documented policy |
 | SYNC-040 | Medium | Timing quality acceptance is underspecified | Implemented; regression checks and documented policy |
 | TIME-041 | High | Past or timezone-naive publish times are forwarded unchecked | Implemented; isolated regression validation |
+
+
+## Regression evidence by area
+
+| Audit IDs | Primary regression coverage |
+|---|---|
+| LOGIC-001, LOGIC-002, TIME-033 | tests/test_reliability.py; tests/test_medium_regressions.py; tests/test_process_recovery.py |
+| DATA-003, DATA-004, STATE-005, DB-029 | tests/test_reliability.py; tests/test_medium_regressions.py |
+| CONFIG-006, BUILD-028, BUILD-038, QA-037 | tests/test_medium_regressions.py; fresh package installation/import/pip-check; CI configuration |
+| MEDIA-007, MEDIA-008, STATE-009 | tests/test_reliability.py; tests/test_sync_cache.py |
+| SYNC-010, SYNC-011, SYNC-012, SYNC-040 | tests/test_reliability.py; tests/test_medium_regressions.py; tests/test_studio.py |
+| RENDER-013 through RENDER-017 | tests/test_reliability.py; tests/test_editor_server.py; tests/test_low_regressions.py; tests/test_studio.py |
+| STATE-018, INTEGRATION-019, UPLOAD-020, FLOW-023 | tests/test_upload_jobs.py; tests/test_reliability.py; tests/test_browser.py |
+| STATE-021, STATE-022, STATE-039 | tests/test_reliability.py; tests/test_medium_regressions.py; tests/test_low_regressions.py |
+| SEC-024, SEC-025, TIME-041 | tests/test_editor_server.py; tests/test_studio.py; tests/test_low_regressions.py; tests/test_upload_jobs.py |
+| INTEGRATION-026, UI-027 | tests/test_studio.py; tests/test_browser.py; TypeScript/build checks |
+| LYRICS-030, CHART-031, UPLOAD-032 | tests/test_medium_regressions.py; tests/test_upload_jobs.py; uploader wrapper inspection |
+| START-034, UI-035, UI-036 | tests/test_legacy_browser.py; tests/test_low_regressions.py |
+
+## Engineering assessment
+
+All 41 audit entries have implemented corrections or a conservative documented policy where the intended behavior was ambiguous. The local workflow is substantially more reliable and the isolated regression gate is passing. This does not establish perfect behavior or production acceptance against external services. Before unattended publication, perform a controlled acceptance check for live chart changes, lyric relevance, ASR quality, OAuth and YouTube behavior. Ambiguous upload outcomes deliberately require reconciliation instead of another insert.
+
+The supported production path is the canonical CLI/current editor/Studio pipeline. The retained legacy editor has separate rendering assumptions; its mute/solo and state-history regressions are covered, but arbitrary interchange of its timeline schema with the current editor is not established by these tests.

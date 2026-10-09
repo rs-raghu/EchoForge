@@ -7,7 +7,7 @@ Build Studio in `apps/web-studio/frontend` with `npm ci`, `npm run check`, and `
 From the repository root, run:
 
 ```text
-python -m ruff check src scripts tests --select F,E9
+python -m ruff check src scripts tests apps/webeditor_legacy/backend --select F,E9
 python -m pytest tests -q
 python -m pip check
 ```

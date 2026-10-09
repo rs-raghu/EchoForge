@@ -18,7 +18,7 @@ jobs:
       - uses: FedericoCarboni/setup-ffmpeg@v3
       - run: python -m pip install -e ".[studio,upload,test]"
       - run: python -m playwright install --with-deps chromium
-      - run: python -m ruff check src scripts tests --select F,E9
+      - run: python -m ruff check src scripts tests apps/webeditor_legacy/backend --select F,E9
       - run: npm ci
         working-directory: apps/web-studio/frontend
       - run: npm run check

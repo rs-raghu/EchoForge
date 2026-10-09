@@ -50,6 +50,9 @@ def validate_editor(data, project: Path):
     height = number(data.get("height", canvas.get("height", 1080)), "height", 240, 2160)
     if int(width) != width or int(height) != height or int(width) % 2 or int(height) % 2:
         raise ValueError("Canvas dimensions must be even integers")
+    for container in (data, data.get("project") or {}):
+        if "duration" in container:
+            number(container["duration"], "project duration", 0.001, 7200)
     tracks = data.get("tracks", [])
     if not isinstance(tracks, list) or len(tracks) > 100:
         raise ValueError("Invalid tracks")
@@ -73,6 +76,15 @@ def validate_editor(data, project: Path):
         number(style.get("fontSize", style.get("font_size", clip.get("fontSize", 50))), "font size", 1, 1000)
         number(style.get("opacity", clip.get("opacity", 1)), "opacity", 0, 1)
         number(clip.get("volume", 1), "volume", 0, 10)
+        for container in (clip, style):
+            for key, low, high in (
+                ("x", -10000, 10000), ("y", -10000, 10000),
+                ("width", 0, 16384), ("height", 0, 16384),
+                ("rotation", -36000, 36000), ("strokeWidth", 0, 100),
+                ("stroke_width", 0, 100), ("letterSpacing", -100, 100),
+                ("lineHeight", 0.1, 10), ("line_height", 0.1, 10),
+            ):
+                if key in container: number(container[key], key, low, high)
         for key in ("path", "src", "file", "asset", "url"):
             if clip.get(key):
                 asset_path(project, clip[key])

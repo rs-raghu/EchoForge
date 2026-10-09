@@ -35,6 +35,13 @@ def tags(options):
     if isinstance(raw,str): return [x.strip() for x in raw.split(",") if x.strip()]
     return ["lyrics","lyric video","music"]
 def thumb(project_dir, options):
+    selected=options.get('thumbnail') or options.get('thumbnailPath') or options.get('thumbnail_path')
+    if selected:
+        from echoforge.core.security import asset_path
+        path=asset_path(project_dir, selected)
+        if path.suffix.lower() not in {'.jpg','.jpeg','.png'} or not path.is_file():
+            raise ValueError('Thumbnail must be an existing project or shared JPEG/PNG asset')
+        return path
     for p in [project_dir/"renders/upload_thumbnail.jpg", project_dir/"images/upload_thumbnail.jpg", project_dir/"thumbnail.jpg"]:
         if p.exists(): return p
     return None
@@ -70,7 +77,10 @@ def service(project_dir):
         else:
             flow=InstalledAppFlow.from_client_secrets_file(str(cs), SCOPES); creds=flow.run_local_server(port=0)
         atomic_text(tp, creds.to_json())
-    return build("youtube","v3",credentials=creds), None
+    import httplib2
+    from google_auth_httplib2 import AuthorizedHttp
+    http=AuthorizedHttp(creds,http=httplib2.Http(timeout=60))
+    return build("youtube","v3",http=http,cache_discovery=False), None
 def upload_to_youtube(video_path, project_dir, options, progress_callback=None):
     project=Path(project_dir).resolve(); video=Path(video_path).resolve()
     # OS ownership makes duplicate requests serialize, including across CLI/editor workers.
@@ -94,9 +104,12 @@ def upload_to_youtube(video_path, project_dir, options, progress_callback=None):
         meta=stored.get('metadata', stored)
         approved=options.get('metadata') or {}
         combined={**meta, **approved, **{k:v for k,v in options.items() if v is not None}}
+        th=thumb(project, combined)
+        kids=combined.get('madeForKids', combined.get('made_for_kids', False))
+        if not isinstance(kids,bool): raise ValueError('madeForKids must be boolean')
         body={'snippet':{'title': title(project, combined), 'description': combined.get('description', desc(project, combined)),
                          'tags':tags(combined), 'categoryId':str(combined.get('categoryId') or combined.get('category_id') or '10')},
-              'status':{'privacyStatus':priv, 'selfDeclaredMadeForKids':bool(combined.get('madeForKids', combined.get('made_for_kids', False)))}}
+              'status':{'privacyStatus':priv, 'selfDeclaredMadeForKids':kids}}
         if not 1 <= len(body['snippet']['title']) <= 100:
             raise ValueError('YouTube title must contain 1 to 100 characters')
         if len(body['snippet']['description'].encode('utf-8')) > 5000:
@@ -125,7 +138,6 @@ def upload_to_youtube(video_path, project_dir, options, progress_callback=None):
         except Exception as exc:
             upload_db.record_upload(project, {**record, 'status':'uncertain', 'reason':str(exc)})
             return {'ok':False, 'stage':'upload', 'reason':str(exc), 'requires_reconciliation':True}
-        th=Path(combined['thumbnail']) if combined.get('thumbnail') else thumb(project, combined)
         if th and th.is_file():
             try:
                 yt.thumbnails().set(videoId=vid,media_body=MediaFileUpload(str(th))).execute()

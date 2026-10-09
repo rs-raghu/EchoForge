@@ -104,3 +104,29 @@ def test_media_missing_and_unknown_are_explicit(client):
     p=create(client)
     assert client.get('/api/projects/'+p['id']+'/media/audio').status_code==404
     assert client.get('/api/projects/'+p['id']+'/media/secrets').status_code==404
+
+
+def test_approved_studio_workflow_reaches_real_final_render(client, monkeypatch):
+    import subprocess
+    import json
+    p=create(client); base='/api/projects/'+p['id']; path=Path(p['workspacePath'])
+    subprocess.run(['ffmpeg','-y','-v','error','-f','lavfi','-i','sine=frequency=440:duration=0.5',
+                    str(path/'audio/source_audio.m4a')],check=True,timeout=30)
+    lines=[{'id':'l1','index':1,'type':'lyric','text':'Fixture','timestamp':None}]
+    assert client.post(base+'/lyrics/approve',json={'lines':lines}).status_code==200
+    segments=[{'id':'l1','index':1,'start':0,'end':.4,'text':'Fixture','words':[]}]
+    assert client.post(base+'/timestamps/approve',json={'segments':segments}).status_code==200
+    assert client.get(base+'/render-readiness').json()['ready']
+    settings={'resolution':'720p','aspectRatio':'1:1','fontFamily':'Arial','fontSize':30}
+    response=client.put(base+'/design',json={'settings':settings})
+    assert response.status_code==200,response.text
+    start=render_jobs.start_render_upload_job
+    monkeypatch.setattr(render_jobs,'start_render_upload_job',lambda project, options:start(project,options,background=False))
+    response=client.post(base+'/jobs/render_final',json={'fps':2,'crf':30})
+    assert response.status_code==200,response.text
+    assert response.json()['status']=='completed',response.text
+    final=path/'renders/final_video.mp4'
+    streams=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(final)],timeout=30))['streams']
+    assert {x['codec_type'] for x in streams}=={'audio','video'}
+    assert next(x for x in streams if x['codec_type']=='video')['width']==720
+    assert not (path/'upload/youtube_upload_report.json').exists()

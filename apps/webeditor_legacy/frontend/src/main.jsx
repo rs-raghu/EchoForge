@@ -60,7 +60,12 @@ function ensureProjectLyricDefaults(project) {
 
 function getTrack(project, id) { return project?.tracks?.find(t => t.id === id); }
 function allClips(project) { return (project?.tracks || []).flatMap(t => (t.clips||[]).map(c=>({track:t,clip:c}))); }
+function trackEnabled(project, id) {
+  const track = getTrack(project, id);
+  return !!track && track.visible !== false && !track.muted && (!(project.tracks || []).some(t => t.solo) || !!track.solo);
+}
 function findActiveLyric(project, time) {
+  if (!trackEnabled(project, "lyrics")) return null;
   const t = getTrack(project, 'lyrics');
   return (t?.clips||[]).find(c => c.visible!==false && time>=Number(c.start) && time<=Number(c.end));
 }
@@ -111,7 +116,7 @@ function duplicateClipsByIds(project, clipIds) {
 }
 function lyricClips(project) { return (getTrack(project, 'lyrics')?.clips || []); }
 
-function audioClips(project) { return (getTrack(project, 'audio')?.clips || []); }
+function audioClips(project) { return trackEnabled(project, 'audio') ? (getTrack(project, 'audio')?.clips || []) : []; }
 
 function backgroundClips(project) {
   return (getTrack(project, 'background')?.clips || []);
@@ -403,8 +408,8 @@ function PreviewCanvas({ project, projectId, currentTime, selectedClipId, select
   const active  = findActiveLyric(project, currentTime);
   const selectedSet = useMemo(() => new Set(selectedClipIds || []), [selectedClipIds]);
   const selected = selectedClipId ? findClip(project, selectedClipId)?.clip : null;
-  const displayClip = selected?.type === 'text' ? selected : active;
-  const bg = project.assets?.background;
+  const displayClip = trackEnabled(project, 'lyrics') ? (selected?.type === 'text' ? selected : active) : null;
+  const bg = trackEnabled(project, 'background') ? project.assets?.background : null;
   
   // Determine if the background is a video file
   const isVideoBg = bg && bg.match(/\.(mp4|webm|mov)$/i);
@@ -481,7 +486,7 @@ function PreviewCanvas({ project, projectId, currentTime, selectedClipId, select
         <span className="previewTimecode">{fmt(currentTime)}</span>
       </div>
       <div ref={shellRef} className="previewShell" onClick={() => { setSelectedClipId(null); setSelectedClipIds?.([]); }} onDoubleClick={toggleFullscreen}>
-        <div ref={wrapRef} className="previewStage" style={{ aspectRatio: `${project.width}/${project.height}` }}>
+        <div ref={wrapRef} className="previewStage" style={{ aspectRatio: `${project.width}/${project.height}`, background: '#fff' }}>
           {bg
             ? (isVideoBg 
                 ? <video ref={bgVideoRef} className="previewBg" src={api.mediaUrl(projectId, bg)} muted playsInline />
@@ -558,7 +563,7 @@ function Transport({ project, projectId, currentTime, setCurrentTime, playing, s
       try { el.currentTime = desired; } catch {}
     }
 
-    el.volume = muted ? 0 : volume / 100;
+    el.volume = muted ? 0 : clamp((volume / 100) * Number(activeAudio.volume ?? 1), 0, 1);
     el.playbackRate = speed;
 
     if (playing) {
@@ -670,8 +675,7 @@ function Transport({ project, projectId, currentTime, setCurrentTime, playing, s
    ============================================================ */
 function Timeline({ project, currentTime, setCurrentTime, selectedClipId, selectedClipIds, setSelectedClipId, setSelectedClipIds, updateProject, onAddLyric, snap, triggerDelete, triggerDuplicate }) {
   const [zoom, setZoom]   = useState(8);
-  const [mutedTracks, setMutedTracks] = useState({});
-  const [soloTrack,   setSoloTrack]   = useState(null);
+
   const [ctxMenu, setCtxMenu]         = useState(null);
   const [clipSearch, setClipSearch]   = useState('');
   const scrollRef  = useRef(null);
@@ -919,8 +923,8 @@ function Timeline({ project, currentTime, setCurrentTime, selectedClipId, select
                 <div className={`trackDot ${track.type||''}`} />
                 <span className="trackLabelName" title={track.name||track.id}>{track.name||track.id}</span>
                 <div className="trackControls">
-                  <button className={`icon-btn ${mutedTracks[track.id]?'trackActive':''}`} title="Mute track" onClick={() => setMutedTracks(m => ({...m,[track.id]:!m[track.id]}))}>M</button>
-                  <button className={`icon-btn ${soloTrack===track.id?'trackActive':''}`} title="Solo track" onClick={() => setSoloTrack(s => s===track.id ? null : track.id)}>S</button>
+                  <button className={`icon-btn ${track.muted?'trackActive':''}`} title="Mute track" onClick={() => updateProject(p => ({...p, tracks: p.tracks.map(t => t.id === track.id ? {...t, muted: !t.muted} : t)}))}>M</button>
+                  <button className={`icon-btn ${track.solo?'trackActive':''}`} title="Solo track" onClick={() => updateProject(p => ({...p, tracks: p.tracks.map(t => ({...t, solo: t.id === track.id ? !t.solo : false}))}))}>S</button>
                 </div>
               </div>
               <div className={`trackArea ${track.type||''}`} style={{ width: totalWidth }}>
