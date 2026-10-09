@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from echoforge.core.storage import atomic_text
+
 import html
-import json
 import os
 import re
 from datetime import datetime, timezone
@@ -16,9 +17,9 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+def write_json(path, payload):
+    from echoforge.core.storage import atomic_json
+    atomic_json(path, payload)
 
 
 def load_env(project_dir: Path) -> None:
@@ -137,8 +138,8 @@ def fetch_genius_lyrics(project_dir: Path, review: dict[str, Any]) -> dict[str, 
 
     lyrics_path = lyrics_dir / "lyrics.txt"
     original_path = lyrics_dir / "lyrics_original.txt"
-    lyrics_path.write_text(lyrics + "\n", encoding="utf-8")
-    original_path.write_text(lyrics + "\n", encoding="utf-8")
+    atomic_text(lyrics_path, lyrics + "\n")
+    atomic_text(original_path, lyrics + "\n")
     result = {"ok": True, "source": "genius", "found": True, "lyrics_path": str(lyrics_path), "url": hit.get("url"), "checked_at": now_iso()}
     write_json(status_path, result)
     return result

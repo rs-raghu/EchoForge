@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from echoforge.core.storage import update_json
+
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,28 +25,28 @@ def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+def write_json(path, payload):
+    from echoforge.core.storage import atomic_json
+    atomic_json(path, payload)
 
 
 def update_manifest(project_dir: Path, updates: dict[str, Any]) -> dict[str, Any]:
     path = project_dir / "asset_manifest.json"
-    manifest = read_json(path) if path.exists() else {"schema_version": 1, "assets": {}, "folders": {}}
-    manifest.setdefault("assets", {}).update(updates)
-    manifest["updated_at"] = now_iso()
-    write_json(path, manifest)
-    return manifest
+    def mutate(manifest):
+        manifest.setdefault("assets", {}).update(updates)
+        manifest["updated_at"] = now_iso()
+        return manifest
+    return update_json(path, mutate, default={"schema_version": 1, "assets": {}, "folders": {}})
 
 
 def update_project_state(project_dir: Path, stage: str, status: str) -> dict[str, Any]:
     path = project_dir / "project_state.json"
-    state = read_json(path)
-    state.setdefault("stages", {})[stage] = status
-    state["current_stage"] = f"{stage}_{status}" if status != "running" else stage
-    state["updated_at"] = now_iso()
-    write_json(path, state)
-    return state
+    def mutate(state):
+        state.setdefault("stages", {})[stage] = status
+        state["current_stage"] = f"{stage}_{status}" if status != "running" else stage
+        state["updated_at"] = now_iso()
+        return state
+    return update_json(path, mutate, default={})
 
 
 def mark_song_status(project_dir: Path, state: dict[str, Any], status: str) -> None:

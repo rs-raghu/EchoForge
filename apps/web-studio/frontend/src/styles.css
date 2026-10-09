@@ -1204,3 +1204,5 @@ input[type="checkbox"] {
     grid-template-columns: 1fr;
   }
 }
+
+.mutation-lock { display: contents; border: 0; padding: 0; margin: 0; }

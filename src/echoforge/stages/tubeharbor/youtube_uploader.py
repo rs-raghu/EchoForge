@@ -1,6 +1,8 @@
 
 from __future__ import annotations
-import json, os
+
+from echoforge.core.storage import atomic_text
+import json
 from datetime import datetime, timezone, timedelta
 from echoforge.core.storage import atomic_json, file_lock
 from echoforge.core.project_state import mark_uploaded
@@ -15,10 +17,10 @@ def root(project_dir):
     try: return project_dir.parents[1]
     except Exception: return Path.cwd()
 def cred_paths(project_dir):
-    r=root(project_dir); sec=r/".secrets"; env=os.environ.get("YOUTUBE_CLIENT_SECRET_PATH") or os.environ.get("YOUTUBE_CLIENT_SECRET_FILE"); cand=[]
-    if env: cand.append(Path(env))
-    cand += [sec/"youtube_client_secret.json", r/"assets/youtube/client_secret.json", r/"client_secret.json"]
-    return next((p for p in cand if p.exists()), sec/"youtube_client_secret.json"), Path(os.environ.get("YOUTUBE_TOKEN_PATH") or os.environ.get("YOUTUBE_TOKEN_FILE") or sec/"youtube_token.json")
+    from echoforge.core.config import Settings
+    config=Settings(); sec=root(project_dir)/'.secrets'
+    return config.youtube_client_secret_path or sec/'youtube_client_secret.json', config.youtube_token_path or sec/'youtube_token.json'
+
 def meta(project_dir): return {"state":read_json(project_dir/"project_state.json",{}) or {}, "review":read_json(project_dir/"metadata_review.json",{}) or {}}
 def title(project_dir, options):
     if options.get("title"): return str(options["title"]).strip()
@@ -67,7 +69,7 @@ def service(project_dir):
         if creds and creds.expired and creds.refresh_token: creds.refresh(Request())
         else:
             flow=InstalledAppFlow.from_client_secrets_file(str(cs), SCOPES); creds=flow.run_local_server(port=0)
-        tp.write_text(creds.to_json(), encoding="utf-8")
+        atomic_text(tp, creds.to_json())
     return build("youtube","v3",credentials=creds), None
 def upload_to_youtube(video_path, project_dir, options, progress_callback=None):
     project=Path(project_dir).resolve(); video=Path(video_path).resolve()

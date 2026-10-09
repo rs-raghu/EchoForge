@@ -136,22 +136,6 @@ def create_upload_thumbnail(
             created_assets={},
         )
 
-def make_upload_thumbnail(
-    project_no: int,
-    song_title: str,
-    artist_text: str,
-    music_thumbnail_path,
-    output_path,
-    background_path=None,
-):
-    return create_upload_thumbnail(
-        project_no=project_no,
-        song_title=song_title,
-        artist_text=artist_text,
-        music_thumbnail_path=music_thumbnail_path,
-        output_path=output_path,
-        background_path=background_path,
-    )
 # Compatibility wrapper used by asset_collector.py
 def make_upload_thumbnail(project_dir: Path, review: dict) -> dict:
     images_dir = project_dir / "images"

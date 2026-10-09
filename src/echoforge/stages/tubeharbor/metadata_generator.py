@@ -16,12 +16,8 @@ def _repo_root() -> Path:
 
 
 def _read_json(path: Path) -> Dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    if not path.exists(): return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _read_text(path: Path, max_chars: Optional[int] = None) -> str:
@@ -33,9 +29,9 @@ def _read_text(path: Path, max_chars: Optional[int] = None) -> str:
     return text.strip()
 
 
-def _write_json(path: Path, payload: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+def _write_json(path, payload):
+    from echoforge.core.storage import atomic_json
+    atomic_json(path, payload)
 
 
 def _clean_spaces(text: str) -> str:

@@ -308,12 +308,13 @@ def shift_timestamps(project_id: str, payload: dict):
 def approve_timestamps(project_id: str, payload: dict):
     path=project_path(project_id); segments=payload.get("segments"); check=timing_check(path,segments)
     if check["warnings"] or not segments: raise ValueError("Resolve timing warnings before approval")
-    from echoforge.core.storage import atomic_text, update_json
+    from echoforge.core.storage import update_json
     from echoforge.stages.verselock.lrc_parser import seconds_to_lrc_timestamp
-    with file_lock(path/"studio/edit.lock"):
+    with file_lock(path/"sync/run.lock"), file_lock(path/"studio/edit.lock"):
         save_version(path,"timestamps",segments,True)
-        atomic_json(path/"sync/final_synced_lyrics.json",{"schema":"echoforge.final_synced_lyrics.v1", "lines":[{**x,"start_seconds":x['start'],"end_seconds":x['end']} for x in segments]})
-        atomic_text(path/"sync/final_synced_lyrics.lrc","\n".join(f"[{seconds_to_lrc_timestamp(x['start'])}]{x['text']}" for x in segments)+"\n")
+        from echoforge.core.sync_state import publish_sync
+        publish_sync(path, "\n".join(f"[{seconds_to_lrc_timestamp(x['start'])}]{x['text']}" for x in segments)+"\n",
+                     {"schema":"echoforge.final_synced_lyrics.v1", "lines":[{**x,"start_seconds":x['start'],"end_seconds":x['end']} for x in segments]})
         (path/"studio/timestamps_draft.json").unlink(missing_ok=True)
         def accept(state):
             state.setdefault('stages',{}).update(verselock='done',renderer='pending')

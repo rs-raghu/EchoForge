@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   createProject,
   fetchCharts,
@@ -65,6 +65,8 @@ export function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [logs, setLogs] = useState<LogItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
   const [selected, setSelected] = useState<ProjectDetail | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +83,8 @@ export function App() {
       setProjects(projectPayload);
       setLogs(logPayload);
       if (selectedId) {
-        setSelected(await fetchProject(selectedId));
+        const next = await fetchProject(selectedId);
+        if (selectedIdRef.current === next.id) setSelected(next);
       }
       setError(null);
     } catch (err) {
@@ -141,30 +144,39 @@ export function App() {
   }
 
   async function openProject(projectId: string) {
+    selectedIdRef.current = projectId;
+    setSelected(null);
     setSelectedId(projectId);
     setView("projects");
     try {
-      setSelected(await fetchProject(projectId));
+      const next = await fetchProject(projectId);
+      if (selectedIdRef.current === next.id) setSelected(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Project could not be opened");
     }
   }
 
   async function openLyrics(projectId: string) {
+    selectedIdRef.current = projectId;
+    setSelected(null);
     setSelectedId(projectId);
     setView("lyrics");
     try {
-      setSelected(await fetchProject(projectId));
+      const next = await fetchProject(projectId);
+      if (selectedIdRef.current === next.id) setSelected(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Project could not be opened");
     }
   }
 
   async function openSync(projectId: string) {
+    selectedIdRef.current = projectId;
+    setSelected(null);
     setSelectedId(projectId);
     setView("sync");
     try {
-      setSelected(await fetchProject(projectId));
+      const next = await fetchProject(projectId);
+      if (selectedIdRef.current === next.id) setSelected(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Project could not be opened");
     }
@@ -267,60 +279,70 @@ export function App() {
         ) : null}
         {view === "lyrics" ? (
           <LyricsEditor
+            key={selected?.id ?? "none"}
             project={selected}
             setError={setError}
             onProjectChanged={async () => {
               await refresh();
               if (selectedId) {
-                setSelected(await fetchProject(selectedId));
+                const next = await fetchProject(selectedId);
+        if (selectedIdRef.current === next.id) setSelected(next);
               }
             }}
           />
         ) : null}
         {view === "sync" ? (
           <SyncEditor
+            key={selected?.id ?? "none"}
             project={selected}
             setError={setError}
             onProjectChanged={async () => {
               await refresh();
               if (selectedId) {
-                setSelected(await fetchProject(selectedId));
+                const next = await fetchProject(selectedId);
+        if (selectedIdRef.current === next.id) setSelected(next);
               }
             }}
           />
         ) : null}
         {view === "templates" ? (
           <TemplatesView
+            key={selected?.id ?? "none"}
             project={selected}
             setError={setError}
             onProjectChanged={async () => {
               await refresh();
               if (selectedId) {
-                setSelected(await fetchProject(selectedId));
+                const next = await fetchProject(selectedId);
+        if (selectedIdRef.current === next.id) setSelected(next);
               }
             }}
           />
         ) : null}
         {view === "render" ? (
           <RenderQueueView
+            key={selected?.id ?? "none"}
             project={selected}
             setError={setError}
             onProjectChanged={async () => {
               await refresh();
               if (selectedId) {
-                setSelected(await fetchProject(selectedId));
+                const next = await fetchProject(selectedId);
+        if (selectedIdRef.current === next.id) setSelected(next);
               }
             }}
           />
         ) : null}
         {view === "upload" ? (
           <UploadManagerView
+            key={selected?.id ?? "none"}
             project={selected}
             setError={setError}
             onProjectChanged={async () => {
               await refresh();
               if (selectedId) {
-                setSelected(await fetchProject(selectedId));
+                const next = await fetchProject(selectedId);
+        if (selectedIdRef.current === next.id) setSelected(next);
               }
             }}
           />

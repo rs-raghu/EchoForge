@@ -11,6 +11,8 @@ type SyncEditorProps = {
 const nudgeSteps = [-1, -0.5, -0.1, 0.1, 0.5, 1];
 
 export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorProps) {
+  const editRevision = useRef(0);
+  const inFlight = useRef(false);
   const [payload, setPayload] = useState<TimestampsPayload | null>(null);
   const [segments, setSegments] = useState<TimestampSegment[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -103,6 +105,7 @@ export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorPr
           }
         : current,
     );
+    editRevision.current += 1;
     setDirty(true);
     setStatus(null);
   }
@@ -188,11 +191,14 @@ export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorPr
   }
 
   async function nudge(delta: number) {
-    if (!project) return;
+    if (!project || inFlight.current) return;
+    inFlight.current = true;
+    const requestedRevision = editRevision.current;
     setBusy(`nudge-${delta}`);
     setError(null);
     try {
       const next = await shiftTimestamps(project.id, segments, delta, selectedIds);
+      if (requestedRevision !== editRevision.current) return;
       setSegments(next.segments);
       setPayload((current) =>
         current
@@ -205,21 +211,26 @@ export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorPr
             }
           : current,
       );
-      setDirty(true);
+      editRevision.current += 1;
+    setDirty(true);
       setStatus(`Nudged ${selectedIds.length ? selectedIds.length : segments.length} row${selectedCount === 1 ? "" : "s"}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Timing nudge failed");
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
 
   async function validateCurrent() {
-    if (!project) return;
+    if (!project || inFlight.current) return;
+    inFlight.current = true;
+    const requestedRevision = editRevision.current;
     setBusy("validate");
     setError(null);
     try {
       const next = await validateTimestamps(project.id, segments);
+      if (requestedRevision !== editRevision.current) return;
       setPayload((current) =>
         current
           ? {
@@ -236,16 +247,20 @@ export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorPr
     } catch (err) {
       setError(err instanceof Error ? err.message : "Validation failed");
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
 
   async function saveDraft() {
-    if (!project) return;
+    if (!project || inFlight.current) return;
+    inFlight.current = true;
+    const requestedRevision = editRevision.current;
     setBusy("draft");
     setError(null);
     try {
       const next = normalizePayload(await saveTimestamps(project.id, segments, true));
+      if (requestedRevision !== editRevision.current) return;
       setPayload(next);
       setSegments(next.segments);
       setDirty(false);
@@ -253,16 +268,20 @@ export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorPr
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync draft could not be saved");
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
 
   async function saveCurrent() {
-    if (!project) return;
+    if (!project || inFlight.current) return;
+    inFlight.current = true;
+    const requestedRevision = editRevision.current;
     setBusy("save");
     setError(null);
     try {
       const next = normalizePayload(await saveTimestamps(project.id, segments, false));
+      if (requestedRevision !== editRevision.current) return;
       setPayload(next);
       setSegments(next.segments);
       setDirty(false);
@@ -271,16 +290,20 @@ export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorPr
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync timings could not be saved");
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
 
   async function approveCurrent() {
-    if (!project) return;
+    if (!project || inFlight.current) return;
+    inFlight.current = true;
+    const requestedRevision = editRevision.current;
     setBusy("approve");
     setError(null);
     try {
       const next = normalizePayload(await approveTimestamps(project.id, segments));
+      if (requestedRevision !== editRevision.current) return;
       setPayload(next);
       setSegments(next.segments);
       setDirty(false);
@@ -289,6 +312,7 @@ export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorPr
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync timings could not be approved");
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
@@ -315,16 +339,16 @@ export function SyncEditor({ project, onProjectChanged, setError }: SyncEditorPr
           </div>
         </div>
         <div className="lyrics-tools">
-          <button className="button primary" disabled={busy === "save"} onClick={() => void saveCurrent()} type="button">
+          <button className="button primary" disabled={Boolean(busy) || !payload} onClick={() => void saveCurrent()} type="button">
             Save
           </button>
-          <button className="button" disabled={busy === "draft"} onClick={() => void saveDraft()} type="button">
+          <button className="button" disabled={Boolean(busy) || !payload} onClick={() => void saveDraft()} type="button">
             Save Draft
           </button>
-          <button className="button" disabled={busy === "validate"} onClick={() => void validateCurrent()} type="button">
+          <button className="button" disabled={Boolean(busy) || !payload} onClick={() => void validateCurrent()} type="button">
             Validate
           </button>
-          <button className="button success" disabled={busy === "approve"} onClick={() => void approveCurrent()} type="button">
+          <button className="button success" disabled={Boolean(busy) || !payload} onClick={() => void approveCurrent()} type="button">
             Approve Sync
           </button>
         </div>

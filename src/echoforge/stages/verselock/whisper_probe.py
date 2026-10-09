@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from echoforge.core.storage import atomic_text
+
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,17 +22,13 @@ def seconds_to_lrc_timestamp(seconds: float) -> str:
 
 
 def read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    if not path.exists(): return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+def write_json(path, payload):
+    from echoforge.core.storage import atomic_json
+    atomic_json(path, payload)
 
 
 def find_audio_file(project_dir: Path) -> Path | None:
@@ -245,7 +243,7 @@ def run_whisper_probe(
 
     sync_dir.mkdir(parents=True, exist_ok=True)
     write_json(output_json, payload)
-    output_lrc.write_text(_payload_to_lrc(payload), encoding="utf-8")
+    atomic_text(output_lrc, _payload_to_lrc(payload))
 
     result = {
         "ok": True,

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+
+from echoforge.core.storage import atomic_text
+
 import json
 import re
 import unicodedata
@@ -55,9 +58,9 @@ def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+def write_json(path, payload):
+    from echoforge.core.storage import atomic_json
+    atomic_json(path, payload)
 
 
 def _ascii(text: str) -> str:
@@ -249,6 +252,7 @@ def source_match_report(project_dir: Path, lyric_lines: list[str], words: list[d
     return report
 
 
+@project_lock("sync/run.lock")
 def align_lyrics_to_whisper(
     project: str | Path,
     *,
@@ -382,8 +386,12 @@ def align_lyrics_to_whisper(
         output_json = candidate_json
 
     output_lrc.parent.mkdir(parents=True, exist_ok=True)
-    output_lrc.write_text(lines_to_lrc(aligned), encoding="utf-8")
-    write_json(output_json, payload)
+    if output_lrc == final_lrc:
+        from echoforge.core.sync_state import publish_sync
+        publish_sync(project_dir, lines_to_lrc(aligned), payload)
+    else:
+        atomic_text(output_lrc, lines_to_lrc(aligned))
+        write_json(output_json, payload)
 
     ok = bool(promote)
     reason = None if ok else (

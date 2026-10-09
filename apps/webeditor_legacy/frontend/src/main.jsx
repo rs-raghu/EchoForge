@@ -668,7 +668,7 @@ function Transport({ project, projectId, currentTime, setCurrentTime, playing, s
 /* ============================================================
    TIMELINE
    ============================================================ */
-function Timeline({ project, currentTime, setCurrentTime, selectedClipIds, setSelectedClipId, setSelectedClipIds, updateProject, onAddLyric, snap, triggerDelete, triggerDuplicate }) {
+function Timeline({ project, currentTime, setCurrentTime, selectedClipId, selectedClipIds, setSelectedClipId, setSelectedClipIds, updateProject, onAddLyric, snap, triggerDelete, triggerDuplicate }) {
   const [zoom, setZoom]   = useState(8);
   const [mutedTracks, setMutedTracks] = useState({});
   const [soloTrack,   setSoloTrack]   = useState(null);
@@ -1370,7 +1370,7 @@ function Editor({ projectId, initialProject, onBack }) {
 
         <Timeline
           project={project} currentTime={currentTime} setCurrentTime={setCurrentTime}
-          selectedClipIds={selectedClipIds} setSelectedClipId={setSelectedClipId} setSelectedClipIds={setSelectedClipIds}
+          selectedClipId={selectedClipId} selectedClipIds={selectedClipIds} setSelectedClipId={setSelectedClipId} setSelectedClipIds={setSelectedClipIds}
           updateProject={updateProject} onAddLyric={addLyricAtPlayhead} snap={snap}
           triggerDelete={triggerDelete} triggerDuplicate={triggerDuplicate}
         />

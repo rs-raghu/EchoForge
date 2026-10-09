@@ -28,6 +28,8 @@ def _fraction_to_ms(value: str | None) -> int:
 
 
 def timestamp_to_seconds(minutes: str, seconds: str, fraction: str | None) -> float:
+    if not 0 <= int(seconds) < 60:
+        raise ValueError("Invalid LRC seconds")
     return int(minutes) * 60 + int(seconds) + (_fraction_to_ms(fraction) / 1000.0)
 
 
@@ -43,6 +45,8 @@ def seconds_to_lrc_timestamp(seconds: float) -> str:
 def parse_lrc_text(raw_text: str) -> list[LrcLine]:
     parsed: list[LrcLine] = []
     line_index = 0
+    offsets = re.findall(r"\[offset:([+-]?\d+)\]", raw_text, re.I)
+    offset = int(offsets[-1]) / 1000 if offsets else 0
 
     for raw_line in raw_text.splitlines():
         line = raw_line.strip()
@@ -55,11 +59,11 @@ def parse_lrc_text(raw_text: str) -> list[LrcLine]:
 
         text = TIMESTAMP_RE.sub("", line).strip()
         text = METADATA_RE.sub("", text).strip()
-        if not text:
-            continue
-
         for match in matches:
-            start = timestamp_to_seconds(match.group(1), match.group(2), match.group(3))
+            try:
+                start = max(0, timestamp_to_seconds(match.group(1), match.group(2), match.group(3)) + offset)
+            except ValueError:
+                continue
             parsed.append(
                 LrcLine(
                     index=line_index,

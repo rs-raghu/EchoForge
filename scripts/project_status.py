@@ -11,10 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def load_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def exists(path: Path) -> bool:
@@ -22,6 +19,7 @@ def exists(path: Path) -> bool:
 
 
 def find_video_url(report: dict[str, Any]) -> str:
+    if not (report.get("ok") and report.get("video_id")): return ""
     for key in ("url", "video_url", "youtube_url", "watch_url"):
         if isinstance(report.get(key), str) and report[key]:
             return report[key]
@@ -34,7 +32,6 @@ def find_video_url(report: dict[str, Any]) -> str:
 def status(project: Path) -> dict[str, Any]:
     project = project.resolve()
     state = load_json(project / "project_state.json")
-    manifest = load_json(project / "asset_manifest.json")
     upload_report = load_json(project / "upload" / "youtube_upload_report.json")
     render_status = load_json(project / "upload" / "render_upload_status.json")
 
@@ -64,7 +61,7 @@ def status(project: Path) -> dict[str, Any]:
         "editor_prepared": checks["editor_project"],
         "rendered": checks["rendered_video"],
         "metadata_generated": checks["youtube_metadata"],
-        "uploaded": checks["youtube_upload_report"] or str(state.get("status", "")).lower() == "uploaded",
+        "uploaded": bool(upload_report.get("ok") and upload_report.get("video_id")),
     }
 
     return {

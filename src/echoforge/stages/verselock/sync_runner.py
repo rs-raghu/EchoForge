@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from echoforge.core.storage import project_lock
+
+from echoforge.core.storage import update_json
+
 import json
 import shutil
 from datetime import datetime, timezone
@@ -14,17 +18,13 @@ def now_iso() -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    if not path.exists(): return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+def _write_json(path, payload):
+    from echoforge.core.storage import atomic_json
+    atomic_json(path, payload)
 
 
 def _safe_copy(src: Path, dst: Path) -> None:
@@ -50,30 +50,30 @@ def _backup_existing_final(project_dir: Path, label: str) -> dict[str, str] | No
 
 def _update_project_state(project_dir: Path, result: dict[str, Any]) -> None:
     state_path = project_dir / "project_state.json"
-    state = _read_json(state_path)
-    if not state:
-        return
-    stages = state.setdefault("stages", {})
-    stages["verselock"] = "done" if result.get("ok") else "needs_review"
-    state["current_stage"] = "synced" if result.get("ok") else "verselock_needs_review"
-    state.setdefault("stage_reports", {})["verselock"] = result
-    state["updated_at"] = now_iso()
-    _write_json(state_path, state)
+    def mutate(state):
+        if not state:
+            return
+        stages = state.setdefault("stages", {})
+        stages["verselock"] = "done" if result.get("ok") else "needs_review"
+        state["current_stage"] = "synced" if result.get("ok") else "verselock_needs_review"
+        state.setdefault("stage_reports", {})["verselock"] = result
+        state["updated_at"] = now_iso()
+    return update_json(state_path, mutate, default={})
 
 
 def _update_asset_manifest(project_dir: Path, result: dict[str, Any]) -> None:
     manifest_path = project_dir / "asset_manifest.json"
-    manifest = _read_json(manifest_path)
-    manifest.setdefault("assets", {})
-    manifest["assets"]["final_synced_lyrics"] = {
-        "status": "ready" if result.get("ok") else "needs_review",
-        "mode": result.get("mode"),
-        "lrc_path": result.get("output_lrc"),
-        "json_path": result.get("output_json"),
-        "details": result,
-    }
-    manifest["updated_at"] = now_iso()
-    _write_json(manifest_path, manifest)
+    def mutate(manifest):
+        manifest.setdefault("assets", {})
+        manifest["assets"]["final_synced_lyrics"] = {
+            "status": "ready" if result.get("ok") else "needs_review",
+            "mode": result.get("mode"),
+            "lrc_path": result.get("output_lrc"),
+            "json_path": result.get("output_json"),
+            "details": result,
+        }
+        manifest["updated_at"] = now_iso()
+    return update_json(manifest_path, mutate, default={})
 
 
 def _mark_song(project_dir: Path, result: dict[str, Any]) -> None:
@@ -98,6 +98,7 @@ def _normalize_audio_if_possible(project_dir: Path, force: bool = False) -> dict
     return normalize_project_audio(project_dir, force=force)
 
 
+@project_lock("sync/run.lock")
 def run_whisper_fallback_sync(
     project: str | Path,
     *,
@@ -220,6 +221,7 @@ def run_whisper_fallback_sync(
     return result
 
 
+@project_lock("sync/run.lock")
 def run_verselock_sync(
     project: str | Path,
     *,

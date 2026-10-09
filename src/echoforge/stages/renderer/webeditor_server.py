@@ -18,17 +18,13 @@ ROOT_DIR = Path(__file__).resolve().parents[4]
 
 
 def read_json(path: Path, default: Any = None) -> Any:
-    try:
-        if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-    return default
+    if not path.exists(): return default
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n")
+def write_json(path, data):
+    from echoforge.core.storage import atomic_json
+    atomic_json(path, data)
 
 
 def fnum(value: Any, default: float = 0.0) -> float:

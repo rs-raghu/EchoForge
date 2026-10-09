@@ -8,53 +8,6 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-
-
-def load_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def save_json(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-
-
-def metadata(project: Path) -> dict[str, Any]:
-    obj = load_json(project / "upload" / "youtube_metadata.json")
-    return obj.get("metadata") if isinstance(obj.get("metadata"), dict) else obj
-
-
-def build_youtube():
-    try:
-        from googleapiclient.discovery import build
-        from google_auth_oauthlib.flow import InstalledAppFlow
-        from google.oauth2.credentials import Credentials
-        from google.auth.transport.requests import Request
-    except Exception as exc:
-        raise RuntimeError("Missing YouTube upload dependencies. Run: pip install google-api-python-client google-auth-oauthlib google-auth-httplib2") from exc
-
-    secrets = ROOT / ".secrets"
-    client_secret = secrets / "youtube_client_secret.json"
-    token_path = secrets / "youtube_token.json"
-    if not client_secret.exists():
-        raise FileNotFoundError(f"Missing {client_secret}. Download OAuth desktop client JSON from Google Cloud Console.")
-
-    creds = None
-    if token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(str(client_secret), SCOPES)
-            creds = flow.run_local_server(port=0)
-        token_path.write_text(creds.to_json(), encoding="utf-8")
-    return build("youtube", "v3", credentials=creds)
-
-
 def upload_video(project: Path, args: argparse.Namespace) -> dict[str, Any]:
     from echoforge.stages.tubeharbor.youtube_uploader import upload_to_youtube
     video = Path(args.video) if args.video else project / 'renders/final_video.mp4'

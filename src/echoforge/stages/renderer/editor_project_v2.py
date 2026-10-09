@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from echoforge.core.storage import project_lock
+
 import json
 import re
 import subprocess
@@ -14,17 +16,13 @@ def now_iso() -> str:
 
 
 def read_json(path: Path, default: Any = None) -> Any:
-    if not path.exists():
-        return default
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return default
+    if not path.exists(): return default
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+def write_json(path, data):
+    from echoforge.core.storage import atomic_json
+    atomic_json(path, data)
 
 
 def slug_clip_id(prefix: str, idx: int) -> str:
@@ -53,32 +51,18 @@ LRC_RE = re.compile(r"\[(\d{1,2}:\d{2}(?:\.\d{1,3})?)\](.*)")
 
 
 def parse_lrc(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    raw: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        match = LRC_RE.search(line)
-        if not match:
-            continue
-        text = match.group(2).strip()
-        if not text:
-            continue
-        raw.append({"start": parse_timestamp(match.group(1)), "text": text})
-    raw.sort(key=lambda x: x["start"])
-    out: list[dict[str, Any]] = []
-    for i, item in enumerate(raw):
-        start = float(item["start"])
-        next_start = float(raw[i + 1]["start"]) if i + 1 < len(raw) else start + 3.0
-        end = max(start + 0.5, next_start - 0.05)
-        out.append({"start": round(start, 3), "end": round(end, 3), "text": item["text"]})
-    return out
+    from echoforge.stages.verselock.lrc_parser import parse_lrc_file
+    if not path.exists(): return []
+    raw=parse_lrc_file(path)
+    return [{'start':line.start_seconds,'end':raw[i+1].start_seconds if i+1<len(raw) else line.start_seconds+3,
+             'text':line.text} for i,line in enumerate(raw)]
 
 
 def normalize_line(item: Any) -> dict[str, Any] | None:
     if isinstance(item, str) or not isinstance(item, dict):
         return None
-    text = item.get("text") or item.get("line") or item.get("lyric") or item.get("content")
-    if not text:
+    text = next((item[key] for key in ("text", "line", "lyric", "content") if key in item), None)
+    if text is None:
         return None
     start = item.get("start", item.get("start_seconds", item.get("start_time", item.get("time", item.get("timestamp")))))
     end = item.get("end", item.get("end_seconds", item.get("end_time")))
@@ -86,10 +70,12 @@ def normalize_line(item: Any) -> dict[str, Any] | None:
         start_f = float(start)
     except Exception:
         return None
+    if not __import__("math").isfinite(start_f) or start_f < 0: return None
     try:
         end_f = float(end) if end is not None else start_f + 3.0
     except Exception:
         end_f = start_f + 3.0
+    if not __import__("math").isfinite(end_f): return None
     return {"start": round(start_f, 3), "end": round(max(start_f + 0.35, end_f), 3), "text": str(text).strip()}
 
 
@@ -112,14 +98,16 @@ def extract_lines_from_json(data: Any) -> list[dict[str, Any]]:
     for item in candidates:
         norm = normalize_line(item)
         if norm:
+            norm["_end_missing"] = not any(key in item for key in ("end", "end_seconds", "end_time"))
             lines.append(norm)
     lines.sort(key=lambda x: x["start"])
 
     for i, line in enumerate(lines):
         if i + 1 < len(lines):
             next_start = lines[i + 1]["start"]
-            if line["end"] > next_start or line["end"] <= line["start"] + 0.35:
-                line["end"] = round(max(line["start"] + 0.5, next_start - 0.05), 3)
+            if line["_end_missing"] or line["end"] > next_start or line["end"] <= line["start"] + 0.35:
+                line["end"] = round(next_start, 3)
+    for line in lines: line.pop("_end_missing", None)
     return lines
 
 
@@ -189,7 +177,10 @@ def read_project_metadata(project_dir: Path) -> tuple[str, str]:
     return str(title), str(artist)
 
 
+@project_lock("sync/publish.lock")
 def load_final_lines(project_dir: Path) -> list[dict[str, Any]]:
+    from echoforge.core.sync_state import validate_sync_pair
+    validate_sync_pair(project_dir)
     final_json = project_dir / "sync" / "final_synced_lyrics.json"
     lines = extract_lines_from_json(read_json(final_json, None))
     if lines:

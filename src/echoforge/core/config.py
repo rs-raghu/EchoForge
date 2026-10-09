@@ -1,39 +1,36 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from echoforge.core.paths import ROOT_DIR
 
 
+def integer_setting(name, default, minimum=1, maximum=65535):
+    try: result=int(os.getenv(name,str(default)))
+    except ValueError: raise ValueError(f'{name} must be an integer') from None
+    if not minimum <= result <= maximum: raise ValueError(f'{name} is outside its supported range')
+    return result
+
+
+def credential_path(name, alias):
+    raw=os.getenv(name) or os.getenv(alias)
+    if not raw: return None
+    value=Path(raw).expanduser()
+    return value.resolve() if value.is_absolute() else (ROOT_DIR/value).resolve()
+
+
 @dataclass(frozen=True)
 class Settings:
-    app_name: str = "EchoForge"
-    environment: str = os.getenv("ECHOFORGE_ENV", "dev")
-
-    youtube_charts_url: str = os.getenv(
-        "YOUTUBE_CHARTS_URL",
-        "https://charts.youtube.com/charts/TopSongs/global/weekly",
-    )
-
-    max_songs: int = int(os.getenv("MAX_SONGS", "100"))
-
-    genius_access_token: str | None = os.getenv("GENIUS_ACCESS_TOKEN") or None
-
-    webeditor_backend_host: str = os.getenv("WEBEDITOR_BACKEND_HOST", "127.0.0.1")
-    webeditor_backend_port: int = int(os.getenv("WEBEDITOR_BACKEND_PORT", "8765"))
-    webeditor_frontend_port: int = int(os.getenv("WEBEDITOR_FRONTEND_PORT", "5173"))
-
-    youtube_client_secret_path: Path | None = (
-        Path(os.getenv("YOUTUBE_CLIENT_SECRET_PATH"))
-        if os.getenv("YOUTUBE_CLIENT_SECRET_PATH")
-        else None
-    )
-
-    youtube_token_path: Path | None = (
-        Path(os.getenv("YOUTUBE_TOKEN_PATH"))
-        if os.getenv("YOUTUBE_TOKEN_PATH")
-        else None
-    )
+    app_name: str='EchoForge'
+    environment: str=field(default_factory=lambda:os.getenv('ECHOFORGE_ENV','dev'))
+    youtube_charts_url: str=field(default_factory=lambda:os.getenv('YOUTUBE_CHARTS_URL','https://charts.youtube.com/charts/TopSongs/global/weekly'))
+    max_songs: int=field(default_factory=lambda:integer_setting('MAX_SONGS',100,1,500))
+    genius_access_token: str | None=field(default_factory=lambda:os.getenv('GENIUS_ACCESS_TOKEN') or None, repr=False)
+    webeditor_backend_host: str=field(default_factory=lambda:os.getenv('WEBEDITOR_BACKEND_HOST','127.0.0.1'))
+    webeditor_backend_port: int=field(default_factory=lambda:integer_setting('WEBEDITOR_BACKEND_PORT',8765))
+    webeditor_frontend_port: int=field(default_factory=lambda:integer_setting('WEBEDITOR_FRONTEND_PORT',5173))
+    youtube_client_secret_path: Path | None=field(default_factory=lambda:credential_path('YOUTUBE_CLIENT_SECRET_PATH','YOUTUBE_CLIENT_SECRET_FILE'))
+    youtube_token_path: Path | None=field(default_factory=lambda:credential_path('YOUTUBE_TOKEN_PATH','YOUTUBE_TOKEN_FILE'))
 
 
 settings = Settings()

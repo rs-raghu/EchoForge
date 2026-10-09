@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { approveUpload, fetchJobs, fetchUploadMetadata, generateUploadMetadata, saveUploadMetadata } from "../api";
 import type { JobItem, UploadMetadata } from "../types";
 import { EmptyPanel, JobList, type StudioPageProps } from "./ViewSharedComponents";
@@ -6,6 +6,7 @@ import { EmptyPanel, JobList, type StudioPageProps } from "./ViewSharedComponent
 export function UploadManagerView({ project, onProjectChanged, setError }: StudioPageProps) {
   const [metadata, setMetadata] = useState<UploadMetadata | null>(null);
   const [jobs, setJobs] = useState<JobItem[]>([]);
+  const inFlight = useRef(false);
   const [busy, setBusy] = useState<string | null>(null);
   const tagsText = useMemo(() => (metadata?.tags ?? []).join(", "), [metadata?.tags]);
 
@@ -39,6 +40,8 @@ export function UploadManagerView({ project, onProjectChanged, setError }: Studi
     if (!project) {
       return;
     }
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy("generate");
     setError(null);
     try {
@@ -46,6 +49,7 @@ export function UploadManagerView({ project, onProjectChanged, setError }: Studi
     } catch (err) {
       setError(err instanceof Error ? err.message : "Metadata could not be generated");
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
@@ -54,6 +58,8 @@ export function UploadManagerView({ project, onProjectChanged, setError }: Studi
     if (!project || !metadata) {
       return;
     }
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy("save");
     setError(null);
     try {
@@ -61,6 +67,7 @@ export function UploadManagerView({ project, onProjectChanged, setError }: Studi
     } catch (err) {
       setError(err instanceof Error ? err.message : "Metadata could not be saved");
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
@@ -69,6 +76,8 @@ export function UploadManagerView({ project, onProjectChanged, setError }: Studi
     if (!project || !metadata) {
       return;
     }
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(`upload-${privacy}`);
     setError(null);
     try {
@@ -80,6 +89,7 @@ export function UploadManagerView({ project, onProjectChanged, setError }: Studi
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload could not be requested");
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
@@ -89,7 +99,7 @@ export function UploadManagerView({ project, onProjectChanged, setError }: Studi
   }
 
   return (
-    <section className="studio-workbench">
+    <fieldset disabled={Boolean(busy)} className="mutation-lock"><section className="studio-workbench">
       <section className="panel">
         <div className="panel-header">
           <h2>Upload</h2>
@@ -166,6 +176,6 @@ export function UploadManagerView({ project, onProjectChanged, setError }: Studi
         <JobList jobs={jobs.filter((job) => job.jobType === "upload_youtube")} />
         {metadata?.publishedUrl ? <div className="success-note">{metadata.publishedUrl}</div> : null}
       </section>
-    </section>
+    </section></fieldset>
   );
 }

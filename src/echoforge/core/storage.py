@@ -11,10 +11,25 @@ import tempfile
 import threading
 import time
 from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
 
 _locks: dict[str, threading.RLock] = {}
 _guard = threading.Lock()
+_held = threading.local()
+
+
+def project_lock(relative_path: str, timeout=3600):
+    """Serialize a complete project operation, including nested service calls."""
+    def decorate(function):
+        @wraps(function)
+        def guarded(*args, **kwargs):
+            project = args[0] if args else kwargs.get("project", kwargs.get("project_dir"))
+            if project is None: raise TypeError("Project path is required")
+            with file_lock(Path(project) / relative_path, timeout=timeout):
+                return function(*args, **kwargs)
+        return guarded
+    return decorate
 
 
 @contextmanager
@@ -27,6 +42,16 @@ def file_lock(path: Path, timeout: float = 300):
         raise TimeoutError(f"State is busy: {path.name}")
     handle = None
     locked = False
+    held = getattr(_held, "paths", None)
+    if held is None:
+        held = _held.paths = set()
+    key = str(path)
+    if key in held:
+        try:
+            yield
+        finally:
+            local.release()
+        return
     try:
         handle = path.open("a+b")
         if handle.tell() == 0:
@@ -43,6 +68,7 @@ def file_lock(path: Path, timeout: float = 300):
                     import fcntl
                     fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 locked = True
+                held.add(key)
                 break
             except OSError:
                 if time.monotonic() >= deadline:
@@ -60,6 +86,7 @@ def file_lock(path: Path, timeout: float = 300):
                     import fcntl
                     fcntl.flock(handle, fcntl.LOCK_UN)
             handle.close()
+        held.discard(key)
         local.release()
 
 

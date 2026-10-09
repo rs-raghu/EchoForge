@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { approveLyrics, fetchLyrics, saveLyrics } from "../api";
 import type { LyricLine, LyricLineType, LyricsPayload, ProjectDetail } from "../types";
 
@@ -11,6 +11,8 @@ type LyricsEditorProps = {
 const lineTypes: LyricLineType[] = ["lyric", "section_label", "instrumental", "note"];
 
 export function LyricsEditor({ project, onProjectChanged, setError }: LyricsEditorProps) {
+  const editRevision = useRef(0);
+  const inFlight = useRef(false);
   const [payload, setPayload] = useState<LyricsPayload | null>(null);
   const [lines, setLines] = useState<LyricLine[]>([]);
   const [dirty, setDirty] = useState(false);
@@ -82,6 +84,7 @@ export function LyricsEditor({ project, onProjectChanged, setError }: LyricsEdit
     setUndoStack((stack) => [...stack.slice(-24), lines]);
     setRedoStack([]);
     setLines(reindex(nextLines));
+    editRevision.current += 1;
     setDirty(true);
     setStatus(null);
   }
@@ -155,6 +158,7 @@ export function LyricsEditor({ project, onProjectChanged, setError }: LyricsEdit
     setUndoStack((stack) => stack.slice(0, -1));
     setRedoStack((stack) => [...stack, lines]);
     setLines(previous);
+    editRevision.current += 1;
     setDirty(true);
   }
 
@@ -166,16 +170,20 @@ export function LyricsEditor({ project, onProjectChanged, setError }: LyricsEdit
     setRedoStack((stack) => stack.slice(0, -1));
     setUndoStack((stack) => [...stack, lines]);
     setLines(next);
+    editRevision.current += 1;
     setDirty(true);
   }
 
   async function saveDraft() {
-    if (!project) {
+    if (!project || inFlight.current) {
       return;
     }
+    inFlight.current = true;
+    const requestedRevision = editRevision.current;
     setBusy("draft");
     try {
       const next = await saveLyrics(project.id, lines, true);
+      if (requestedRevision !== editRevision.current) return;
       setPayload(next);
       setLines(next.lines);
       setDirty(false);
@@ -183,15 +191,19 @@ export function LyricsEditor({ project, onProjectChanged, setError }: LyricsEdit
     } catch (err) {
       setError(err instanceof Error ? err.message : "Draft could not be saved");
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
 
   async function saveCurrent() {
-    if (!project) return;
+    if (!project || inFlight.current) return;
+    inFlight.current = true;
+    const requestedRevision = editRevision.current;
     setBusy("save");
     try {
       const next = await saveLyrics(project.id, lines, false);
+      if (requestedRevision !== editRevision.current) return;
       setPayload(next);
       setLines(next.lines);
       setDirty(false);
@@ -200,15 +212,19 @@ export function LyricsEditor({ project, onProjectChanged, setError }: LyricsEdit
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lyrics could not be saved");
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
 
   async function approveCurrent() {
-    if (!project) return;
+    if (!project || inFlight.current) return;
+    inFlight.current = true;
+    const requestedRevision = editRevision.current;
     setBusy("approve");
     try {
       const next = await approveLyrics(project.id, lines);
+      if (requestedRevision !== editRevision.current) return;
       setPayload(next);
       setLines(next.lines);
       setDirty(false);
@@ -217,6 +233,7 @@ export function LyricsEditor({ project, onProjectChanged, setError }: LyricsEdit
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lyrics could not be approved");
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
@@ -234,10 +251,10 @@ export function LyricsEditor({ project, onProjectChanged, setError }: LyricsEdit
           <span>{payload?.source === "draft" ? "Draft" : "Current"}</span>
         </div>
         <div className="lyrics-tools">
-          <button className="button primary" disabled={busy === "save"} onClick={() => void saveCurrent()} type="button">
+          <button className="button primary" disabled={Boolean(busy) || !payload} onClick={() => void saveCurrent()} type="button">
             Save
           </button>
-          <button className="button" disabled={busy === "draft"} onClick={() => void saveDraft()} type="button">
+          <button className="button" disabled={Boolean(busy) || !payload} onClick={() => void saveDraft()} type="button">
             Save Draft
           </button>
           <button className="button" disabled={!undoStack.length} onClick={undo} type="button">
@@ -252,7 +269,7 @@ export function LyricsEditor({ project, onProjectChanged, setError }: LyricsEdit
           <button className="button" onClick={removeEmptyLines} type="button">
             Remove Empty
           </button>
-          <button className="button success" disabled={busy === "approve"} onClick={() => void approveCurrent()} type="button">
+          <button className="button success" disabled={Boolean(busy) || !payload} onClick={() => void approveCurrent()} type="button">
             Approve Lyrics
           </button>
         </div>

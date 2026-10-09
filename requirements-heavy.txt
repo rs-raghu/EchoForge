@@ -1,4 +1,2 @@
-
-
-# Optional VerseLock Whisper fallback probe
-faster-whisper>=1.0.0
+# Optional model-backed transcription. Model downloads require network access.
+-e .[whisper]

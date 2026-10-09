@@ -469,6 +469,8 @@ def parse_srt(path: Path) -> list[dict[str, Any]]:
 
 
 def detect_lyrics(project_dir: Path) -> list[dict[str, Any]]:
+    from echoforge.core.sync_state import validate_sync_pair
+    validate_sync_pair(project_dir)
     for path in [project_dir / "sync/final_synced_lyrics.json", project_dir / "subtitles/final_synced_lyrics.json"]:
         payload = read_json(path)
         if payload and (raw := payload.get("lines") or payload.get("lyrics")):

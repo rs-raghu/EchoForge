@@ -15,6 +15,9 @@ def refresh_chart(*, force=False, max_songs=100, show_browser=False, country=Non
     with file_lock(SONGSCOUT_DATA_DIR / "refresh.lock", timeout=600):
         init_database()
         decision = should_scrape_today(force=force)
+        from echoforge.core.config import Settings
+        chart_url = f"https://charts.youtube.com/charts/TopSongs/{country}/weekly" if country else Settings().youtube_charts_url
+        country = chart_url
         if country:
             from echoforge.stages.songscout.database import get_metadata
             if get_metadata('last_chart_country') not in {None, country}:
@@ -24,12 +27,12 @@ def refresh_chart(*, force=False, max_songs=100, show_browser=False, country=Non
             return {"ok": True, "scraped": False, "reason": decision.reason}
         try:
             kwargs={'max_songs':max_songs, 'headless':not show_browser}
-            if country: kwargs['url']=f'https://charts.youtube.com/charts/TopSongs/{country}/weekly'
+            kwargs['url']=chart_url
             rows = scrape_youtube_charts(**kwargs)
             songs = clean_rows(rows)
             if not songs:
                 raise ValueError("Chart returned no valid songs; previous chart and refresh eligibility preserved")
-            result = upsert_songs(songs)
+            result = upsert_songs(songs, chart_snapshot=True)
             if country:
                 from echoforge.stages.songscout.database import set_metadata
                 set_metadata("last_chart_country",country)

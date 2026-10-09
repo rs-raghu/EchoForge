@@ -32,17 +32,13 @@ def _rel(path: Path, base: Path) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    if not path.exists(): return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+def _write_json(path, data):
+    from echoforge.core.storage import atomic_json
+    atomic_json(path, data)
 
 
 def parse_lrc_timestamp(minutes: str, seconds: str, frac: str | None) -> float:
@@ -58,28 +54,8 @@ def parse_lrc_timestamp(minutes: str, seconds: str, frac: str | None) -> float:
 
 
 def parse_lrc(lrc_path: Path) -> list[LrcLine]:
-    rows = lrc_path.read_text(encoding="utf-8", errors="replace").splitlines()
-    out: list[LrcLine] = []
-    for row in rows:
-        matches = list(TIMESTAMP_RE.finditer(row))
-        if not matches:
-            continue
-        text = TIMESTAMP_RE.sub("", row).strip()
-        if not text:
-            continue
-        for m in matches:
-            out.append(LrcLine(parse_lrc_timestamp(m.group(1), m.group(2), m.group(3)), text))
-
-    out.sort(key=lambda x: x.start)
-    cleaned: list[LrcLine] = []
-    seen: set[tuple[float, str]] = set()
-    for item in out:
-        key = (item.start, item.text)
-        if key in seen:
-            continue
-        seen.add(key)
-        cleaned.append(item)
-    return cleaned
+    from echoforge.stages.verselock.lrc_parser import parse_lrc_file
+    return [LrcLine(line.start_seconds,line.text) for line in parse_lrc_file(lrc_path)]
 
 
 def ffprobe_duration(path: Path) -> float | None:
@@ -502,7 +478,11 @@ def prepare_editor_project(project: str | Path, force: bool = False) -> dict[str
             "project_dir": _rel(project_dir, root),
         }
 
-    lines = parse_lrc(final_lrc)
+    from echoforge.core.sync_state import validate_sync_pair
+    from echoforge.core.storage import file_lock
+    with file_lock(sync_dir / "publish.lock"):
+        validate_sync_pair(project_dir)
+        lines = parse_lrc(final_lrc)
     duration = ffprobe_duration(audio) if audio else None
     clips = build_clips(lines, duration)
     label, song_title, artist = project_title(project_dir)

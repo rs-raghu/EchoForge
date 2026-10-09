@@ -1,26 +1,2 @@
-# Core
-python-dotenv>=1.0.0
-
-# Web Studio API
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
-
-# Chart discovery
-ytmusicapi>=1.0.0
-playwright>=1.40.0
-beautifulsoup4>=4.12.0
-
-# Audio download
-yt-dlp>=2024.1.0
-
-# Lyrics fetching
-syncedlyrics>=0.9.0
-
-# Vocal separation and forced alignment
-demucs>=4.0.0
-whisper-timestamped>=1.14.2
-
-# YouTube upload
-google-api-python-client>=2.100.0
-google-auth-httplib2>=0.1.1
-google-auth-oauthlib>=1.1.0
+# Supported CLI, renderer, Studio and uploader installation from this checkout.
+-e .[studio,upload]

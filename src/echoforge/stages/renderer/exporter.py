@@ -265,7 +265,9 @@ def _export_editor_project(project: str|Path, output: str|Path|None=None, fps:in
     project_dir=Path(project); project_dir=(Path.cwd()/project_dir if not project_dir.is_absolute() else project_dir).resolve()
     root=repo_root(project_dir); ep=project_dir/"editor/editor_project.json"
     if not ep.exists(): return {"ok":False,"stage":"render","reason":f"Missing editor project: {ep}"}
-    data=validate_editor(read_json(ep,{}), project_dir); clips=clips_from(data)
+    snapshot = ep.read_bytes()
+    editor_sha256 = __import__("hashlib").sha256(snapshot).hexdigest()
+    data=validate_editor(json.loads(snapshot), project_dir); clips=clips_from(data)
     if not clips: return {"ok":False,"stage":"render","reason":"No clips found in editor_project.json"}
     size=canvas(data); total=duration(data,clips); fps=int(number(fps, "fps", 1, 60)); quality_crf=int(number(quality_crf, "crf", 0, 51)); frames=max(1,int(math.ceil(total*fps)))
     out=Path(output) if output else project_dir/"renders/final_video.mp4"
@@ -359,7 +361,7 @@ def _export_editor_project(project: str|Path, output: str|Path|None=None, fps:in
             if not completed: out.unlink(missing_ok=True)
     os.replace(out, final_out)
     out = final_out
-    report={"ok":True,"stage":"render","mode":"editor_project_export","project_dir":str(project_dir),"editor_project":str(ep),"output":str(out),"duration":total,"fps":fps,"frames":frames,"size":{"width":size[0],"height":size[1]},"editor_sha256":__import__("echoforge.core.media",fromlist=["fingerprint"]).fingerprint(ep),"clip_count":len(clips),"created_at":time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    report={"ok":True,"stage":"render","mode":"editor_project_export","project_dir":str(project_dir),"editor_project":str(ep),"output":str(out),"duration":total,"fps":fps,"frames":frames,"size":{"width":size[0],"height":size[1]},"editor_sha256":editor_sha256,"clip_count":len(clips),"created_at":time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     write_json(project_dir/"renders/render_report.json",report); emit(progress_callback,stage="render",message="Render complete",progress=.96,output=str(out)); return report
 
 def main():

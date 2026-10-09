@@ -108,3 +108,6 @@ Thumbs.db
 desktop.ini
 .vscode/
 *.code-workspace
+
+# Editable package metadata
+*.egg-info/

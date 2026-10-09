@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from echoforge.core.storage import project_lock
+
+from echoforge.core.storage import atomic_text
+
 import argparse
 import json
 import shutil
@@ -83,6 +87,9 @@ def _prepare_cpu_audio(project_dir: Path, audio_path: Path, force: bool) -> Path
     if not _ffmpeg_exists():
         return audio_path
     out.parent.mkdir(parents=True, exist_ok=True)
+    import tempfile, os
+    fd, temporary = tempfile.mkstemp(suffix='.wav', dir=out.parent)
+    os.close(fd)
     cmd = [
         'ffmpeg', '-y',
         '-i', str(audio_path),
@@ -90,9 +97,14 @@ def _prepare_cpu_audio(project_dir: Path, audio_path: Path, force: bool) -> Path
         '-ac', '1',
         '-ar', '16000',
         '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
-        str(out),
+        temporary,
     ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1800)
+        if not audio_duration(Path(temporary)): raise ValueError("Invalid prepared ASR audio")
+        os.replace(temporary, out)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
     atomic_json(signature, {'sha256': fingerprint(audio_path)})
     return out
 
@@ -120,7 +132,7 @@ def _write_segment_lrc(path: Path, segments: list[dict]) -> int:
         if not text:
             continue
         lines.append(f"{_format_ts(float(seg.get('start') or 0.0))}{text}")
-    path.write_text('\n'.join(lines) + ('\n' if lines else ''), encoding='utf-8')
+    atomic_text(path, '\n'.join(lines) + ('\n' if lines else ''))
     return len(lines)
 
 
@@ -130,7 +142,7 @@ def _write_word_grouped_lrc(path: Path, words: list[dict]) -> int:
     This is not final lyric alignment. It turns Whisper word timestamps into useful rough LRC lines.
     """
     if not words:
-        path.write_text('', encoding='utf-8')
+        atomic_text(path, '')
         return 0
 
     lines = []
@@ -168,10 +180,11 @@ def _write_word_grouped_lrc(path: Path, words: list[dict]) -> int:
                 start = float(word['end'])
 
     flush()
-    path.write_text('\n'.join(lines) + ('\n' if lines else ''), encoding='utf-8')
+    atomic_text(path, '\n'.join(lines) + ('\n' if lines else ''))
     return len(lines)
 
 
+@project_lock("sync/run.lock")
 def run_advanced_whisper_probe(
     project: str | Path,
     model_size: str = 'medium',
@@ -316,7 +329,7 @@ def run_advanced_whisper_probe(
         })
 
     words = _words_from_segments(segments)
-    seg_lines = _write_segment_lrc(output_segment_lrc, segments)
+    _write_segment_lrc(output_segment_lrc, segments)
     word_lines = _write_word_grouped_lrc(output_word_lrc, words)
 
     data = {

@@ -69,6 +69,7 @@ def init_database(path: Path | None = None) -> None:
     with connect(path) as conn:
         conn.execute(CREATE_SONGS_SQL)
         conn.execute(CREATE_METADATA_SQL)
+        conn.execute("CREATE TABLE IF NOT EXISTS current_chart (song_id TEXT PRIMARY KEY REFERENCES songs(id), rank INTEGER)")
         for statement in CREATE_INDEXES_SQL:
             conn.execute(statement)
         if get_metadata("created_at", conn=conn) is None:
@@ -163,7 +164,7 @@ def _clean_song_for_db(song: dict[str, Any], seen_at: str) -> dict[str, Any] | N
     }
 
 
-def upsert_songs(songs: list[dict[str, Any]]) -> dict[str, int]:
+def upsert_songs(songs: list[dict[str, Any]], *, chart_snapshot: bool = False) -> dict[str, int]:
     """
     Insert/update chart songs.
 
@@ -177,6 +178,9 @@ def upsert_songs(songs: list[dict[str, Any]]) -> dict[str, int]:
     skipped_invalid = 0
 
     with connect() as conn:
+        if chart_snapshot:
+            if not any(_clean_song_for_db(song, seen_at) for song in songs): raise ValueError("An empty chart cannot replace the current snapshot")
+            conn.execute("DELETE FROM current_chart")
         for song in songs:
             values = _clean_song_for_db(song, seen_at)
             if values is None:
@@ -225,7 +229,12 @@ def upsert_songs(songs: list[dict[str, Any]]) -> dict[str, int]:
                 )
                 inserted += 1
 
+            if chart_snapshot:
+                conn.execute("INSERT OR REPLACE INTO current_chart(song_id, rank) VALUES (?, ?)", (values['id'], values['rank']))
+
         set_metadata("last_database_update_at", seen_at, conn=conn)
+        if chart_snapshot:
+            set_metadata("chart_snapshot_at", seen_at, conn=conn)
         conn.commit()
 
     return {
@@ -302,6 +311,8 @@ def get_next_available_song(include_failed: bool = False) -> dict[str, Any] | No
             f"""
             SELECT * FROM songs
             WHERE status IN ({placeholders})
+              AND (NOT EXISTS (SELECT 1 FROM metadata WHERE key='chart_snapshot_at')
+                   OR id IN (SELECT song_id FROM current_chart))
             ORDER BY COALESCE(rank, 999999), title COLLATE NOCASE, artist COLLATE NOCASE
             LIMIT 1
             """,

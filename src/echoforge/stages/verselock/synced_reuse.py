@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from echoforge.core.storage import project_lock
+
+from echoforge.core.storage import update_json
+
+
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,12 +20,8 @@ def now_utc_iso() -> str:
 
 
 def read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    if not path.exists(): return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -29,37 +30,37 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def update_project_state(project_dir: Path, result: dict[str, Any]) -> None:
     state_path = project_dir / "project_state.json"
-    state = read_json(state_path)
-    if not state:
-        return
+    def mutate(state):
+        if not state:
+            return
 
-    stages = state.setdefault("stages", {})
-    if result.get("ok"):
-        stages["verselock"] = "done"
-        state["current_stage"] = "synced"
-    else:
-        stages["verselock"] = "needs_review"
-        state["current_stage"] = "verselock"
+        stages = state.setdefault("stages", {})
+        if result.get("ok"):
+            stages["verselock"] = "done"
+            state["current_stage"] = "synced"
+        else:
+            stages["verselock"] = "needs_review"
+            state["current_stage"] = "verselock"
 
-    state.setdefault("stage_reports", {})["verselock"] = result
-    state["updated_at"] = now_utc_iso()
-    write_json(state_path, state)
+        state.setdefault("stage_reports", {})["verselock"] = result
+        state["updated_at"] = now_utc_iso()
+    return update_json(state_path, mutate, default={})
 
 
 def update_asset_manifest(project_dir: Path, result: dict[str, Any]) -> None:
     manifest_path = project_dir / "asset_manifest.json"
-    manifest = read_json(manifest_path)
-    manifest.setdefault("sync", {})
-    manifest["sync"].update(
-        {
-            "mode": result.get("mode"),
-            "final_lrc": result.get("output_lrc"),
-            "final_json": result.get("output_json"),
-            "line_count": result.get("line_count", 0),
-            "updated_at": now_utc_iso(),
-        }
-    )
-    write_json(manifest_path, manifest)
+    def mutate(manifest):
+        manifest.setdefault("sync", {})
+        manifest["sync"].update(
+            {
+                "mode": result.get("mode"),
+                "final_lrc": result.get("output_lrc"),
+                "final_json": result.get("output_json"),
+                "line_count": result.get("line_count", 0),
+                "updated_at": now_utc_iso(),
+            }
+        )
+    return update_json(manifest_path, mutate, default={})
 
 
 def mark_song_synced_if_possible(project_dir: Path) -> None:
@@ -75,6 +76,7 @@ def mark_song_synced_if_possible(project_dir: Path) -> None:
         pass
 
 
+@project_lock("sync/run.lock")
 def reuse_existing_synced_lyrics(project_dir: str | Path, *, force: bool = False) -> dict[str, Any]:
     project_dir = Path(project_dir)
     input_lrc = project_dir / "lyrics" / "synced_lyrics.lrc"
@@ -104,7 +106,7 @@ def reuse_existing_synced_lyrics(project_dir: str | Path, *, force: bool = False
 
     sync_dir.mkdir(parents=True, exist_ok=True)
     lines = parse_lrc_file(input_lrc)
-    if not lines:
+    if not any(line.text.strip() for line in lines):
         result = {
             "ok": False,
             "mode": "invalid_existing_synced_lyrics",
@@ -118,7 +120,6 @@ def reuse_existing_synced_lyrics(project_dir: str | Path, *, force: bool = False
         return result
 
     # Rebuild this inexpensive derivation rather than trusting stale or corrupt pairs.
-    output_lrc.write_text(lines_to_lrc(lines), encoding="utf-8")
     payload = {
         "schema": "echoforge.final_synced_lyrics.v1",
         "input_sha256": fingerprint(input_lrc),
@@ -128,7 +129,8 @@ def reuse_existing_synced_lyrics(project_dir: str | Path, *, force: bool = False
         "line_count": len(lines),
         "lines": [line.to_dict() for line in lines],
     }
-    write_json(output_json, payload)
+    from echoforge.core.sync_state import publish_sync
+    publish_sync(project_dir, lines_to_lrc(lines), payload)
 
     result = {
         "ok": True,

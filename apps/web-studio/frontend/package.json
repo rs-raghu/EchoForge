@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "node ../../../scripts/build-web-studio.mjs",
-    "watch": "node ../../../scripts/build-web-studio.mjs --watch"
+    "watch": "node ../../../scripts/build-web-studio.mjs --watch",
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "react": "^18.2.0",

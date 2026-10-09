@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchProjectDesign, fetchTemplates, saveProjectDesign } from "../api";
 import type { DesignSettings, ProjectDesign, TemplateOption } from "../types";
 import { EmptyPanel, type StudioPageProps } from "./ViewSharedComponents";
@@ -12,6 +12,7 @@ const positions = ["center", "bottom", "top"];
 export function TemplatesView({ project, onProjectChanged, setError }: StudioPageProps) {
   const [templates, setTemplates] = useState<TemplateOption[]>([]);
   const [design, setDesign] = useState<ProjectDesign | null>(null);
+  const inFlight = useRef(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -65,6 +66,8 @@ export function TemplatesView({ project, onProjectChanged, setError }: StudioPag
     if (!project || !design) {
       return;
     }
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy("save-design");
     setError(null);
     try {
@@ -75,6 +78,7 @@ export function TemplatesView({ project, onProjectChanged, setError }: StudioPag
     } catch (err) {
       setError(err instanceof Error ? err.message : "Design could not be saved");
     } finally {
+      inFlight.current = false;
       setBusy(null);
     }
   }
@@ -84,7 +88,7 @@ export function TemplatesView({ project, onProjectChanged, setError }: StudioPag
   }
 
   return (
-    <section className="studio-workbench">
+    <fieldset disabled={Boolean(busy)} className="mutation-lock"><section className="studio-workbench">
       <section className="panel">
         <div className="panel-header">
           <h2>Templates</h2>
@@ -215,6 +219,6 @@ export function TemplatesView({ project, onProjectChanged, setError }: StudioPag
         )}
         <div className="save-state">{busy ? "Saving..." : status ?? (design?.isSaved ? "Saved" : "Unsaved changes")}</div>
       </section>
-    </section>
+    </section></fieldset>
   );
 }

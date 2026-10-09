@@ -281,7 +281,6 @@ def validate_musevault_assets() -> dict:
 # imports these stage-level functions. Keep them here so the public MuseVault
 # API stays stable.
 
-import json as _json
 from datetime import datetime as _datetime, timezone as _timezone
 from typing import Any as _Any
 
@@ -290,9 +289,9 @@ def now_iso() -> str:
     return _datetime.now(_timezone.utc).isoformat(timespec="seconds")
 
 
-def write_json(path: Path, payload: dict[str, _Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+def write_json(path, payload):
+    from echoforge.core.storage import atomic_json
+    atomic_json(path, payload)
 
 
 def project_number(project_dir: Path) -> int:

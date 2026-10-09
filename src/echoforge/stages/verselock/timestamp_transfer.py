@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from echoforge.core.storage import project_lock
+
+from echoforge.core.storage import atomic_text
+
 import json
 import math
 import re
@@ -53,9 +57,9 @@ def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+def _write_json(path, payload):
+    from echoforge.core.storage import atomic_json
+    atomic_json(path, payload)
 
 
 def _ascii(text: str) -> str:
@@ -250,6 +254,7 @@ def _lines_to_lrc(lines: list[TransferredLine]) -> str:
     return "\n".join(f"[{line.timestamp}] {line.text}" for line in lines).strip() + "\n"
 
 
+@project_lock("sync/run.lock")
 def timestamp_transfer_sync(
     project: str | Path,
     *,
@@ -361,8 +366,12 @@ def timestamp_transfer_sync(
     output_lrc = final_lrc if promote else candidate_lrc
     output_json = final_json if promote else candidate_json
     output_lrc.parent.mkdir(parents=True, exist_ok=True)
-    output_lrc.write_text(_lines_to_lrc(transferred), encoding="utf-8")
-    _write_json(output_json, payload)
+    if promote:
+        from echoforge.core.sync_state import publish_sync
+        publish_sync(project_dir, _lines_to_lrc(transferred), payload)
+    else:
+        atomic_text(output_lrc, _lines_to_lrc(transferred))
+        _write_json(output_json, payload)
 
     result = {
         "ok": ok,

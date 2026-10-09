@@ -78,7 +78,7 @@ def is_noise_line(line: str) -> bool:
 
 def is_metric_or_label_line(line: str) -> bool:
     low = normalize_space(line).lower().strip(" :-–—")
-    return low in LABEL_ONLY_VALUES or is_rank_line(low) or looks_like_views(low) or looks_like_date(low)
+    return low in LABEL_ONLY_VALUES or (looks_like_views(low) and bool(re.search(r"views|[kmb]", low))) or looks_like_date(low)
 
 
 def compact_lines(raw_lines: Iterable[Any]) -> list[str]:
@@ -89,7 +89,7 @@ def compact_lines(raw_lines: Iterable[Any]) -> list[str]:
         if not line:
             continue
         key = line.lower()
-        if key in seen:
+        if key in seen and not (len(lines) == 1 and is_rank_line(lines[0])):
             continue
         seen.add(key)
         lines.append(line)

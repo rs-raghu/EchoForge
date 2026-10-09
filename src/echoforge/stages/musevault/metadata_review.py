@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from echoforge.core.storage import update_json
+
 import json
 import re
 from datetime import datetime, timezone
@@ -15,9 +17,9 @@ def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+def write_json(path, payload):
+    from echoforge.core.storage import atomic_json
+    atomic_json(path, payload)
 
 
 def resolve_project_dir(project: str | Path) -> Path:
@@ -59,7 +61,7 @@ def clean_artist(text: str) -> str:
 def search_text(text: str) -> str:
     text = clean_title(text)
     text = re.sub(r"(?i)\b(feat\.|ft\.|featuring)\b", " ", text)
-    text = re.sub(r"[&×x,]", " ", text)
+    text = re.sub(r"[&×,]|\bx\b", " ", text, flags=re.I)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -70,7 +72,7 @@ def source_from_state(state: dict[str, Any]) -> dict[str, Any]:
         "rank": state.get("rank") or song.get("rank"),
         "source_title": state.get("title") or song.get("title") or "",
         "source_artist": state.get("artist") or song.get("artist") or "",
-        "youtube_url": state.get("youtube_url") or song.get("youtube_url") or "",
+        "youtube_url": state.get("source_youtube_url") or state.get("youtube_url") or song.get("youtube_url") or "",
         "thumbnail_url": state.get("thumbnail_url") or song.get("thumbnail_url") or "",
     }
 
@@ -98,24 +100,24 @@ def default_review(state: dict[str, Any]) -> dict[str, Any]:
 
 def update_project_state(project_dir: Path, review: dict[str, Any]) -> None:
     path = project_dir / "project_state.json"
-    state = read_json(path)
-    state["title"] = review["display_title"]
-    state["artist"] = review["display_artist"]
-    state["youtube_url"] = review["youtube_url"]
-    state["thumbnail_url"] = review["thumbnail_url"]
-    state["reviewed_metadata"] = {
-        "source_title": review["source_title"],
-        "source_artist": review["source_artist"],
-        "display_title": review["display_title"],
-        "display_artist": review["display_artist"],
-        "search_title": review["search_title"],
-        "search_artist": review["search_artist"],
-        "reviewed_at": review["reviewed_at"],
-    }
-    state.setdefault("stages", {})["metadata_review"] = "done"
-    state["current_stage"] = "metadata_reviewed"
-    state["updated_at"] = now_iso()
-    write_json(path, state)
+    def mutate(state):
+        state["title"] = review["display_title"]
+        state["artist"] = review["display_artist"]
+        state["youtube_url"] = review["youtube_url"]
+        state["thumbnail_url"] = review["thumbnail_url"]
+        state["reviewed_metadata"] = {
+            "source_title": review["source_title"],
+            "source_artist": review["source_artist"],
+            "display_title": review["display_title"],
+            "display_artist": review["display_artist"],
+            "search_title": review["search_title"],
+            "search_artist": review["search_artist"],
+            "reviewed_at": review["reviewed_at"],
+        }
+        state.setdefault("stages", {})["metadata_review"] = "done"
+        state["current_stage"] = "metadata_reviewed"
+        state["updated_at"] = now_iso()
+    return update_json(path, mutate, default={})
 
 
 def terminal_review(payload: dict[str, Any], *, auto: bool = False) -> dict[str, Any]:

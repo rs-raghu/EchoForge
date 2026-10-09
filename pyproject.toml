@@ -1,11 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "echoforge"
 version = "0.1.0"
 description = "Clean automated lyrics video workflow"
 requires-python = ">=3.10"
+dependencies = [
+  "python-dotenv>=1.0,<2", "requests>=2.31,<3", "Pillow>=10,<13",
+  "playwright>=1.40,<2", "yt-dlp>=2024.1", "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+studio = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.30,<1"]
+upload = ["google-api-python-client>=2.100,<3", "google-auth-httplib2>=0.1.1,<1", "google-auth-oauthlib>=1.1,<2"]
+whisper = ["faster-whisper>=1,<2", "openai-whisper>=20231117"]
+test = ["pytest>=8,<10", "httpx>=0.27,<1", "ruff>=0.8,<1"]
 
 [project.scripts]
 echoforge = "echoforge.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]

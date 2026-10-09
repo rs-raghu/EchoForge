@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
+from echoforge.core.storage import atomic_text
+
 import os
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,25 +15,14 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+def write_json(path, payload):
+    from echoforge.core.storage import atomic_json
+    atomic_json(path, payload)
 
 
 def parse_lrc(lrc_text: str) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    pattern = re.compile(r"\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\](.*)")
-    for raw in lrc_text.splitlines():
-        match = pattern.match(raw.strip())
-        if not match:
-            continue
-        minutes = int(match.group(1))
-        seconds = int(match.group(2))
-        millis = int((match.group(3) or "0").ljust(3, "0")[:3])
-        text = match.group(4).strip()
-        if text:
-            out.append({"time": round(minutes * 60 + seconds + millis / 1000, 3), "text": text})
-    return out
+    from echoforge.stages.verselock.lrc_parser import parse_lrc_text
+    return [{"time":line.start_seconds, "text":line.text} for line in parse_lrc_text(lrc_text)]
 
 
 def plain_from_lrc(lrc_text: str) -> str:
@@ -96,6 +85,10 @@ def fetch_synced_lyrics(project_dir: Path, review: dict[str, Any]) -> dict[str, 
     lrc_text = str(best.get("syncedLyrics") or "").strip()
     plain_text = str(best.get("plainLyrics") or "").strip() or plain_from_lrc(lrc_text)
     lines = parse_lrc(lrc_text)
+    if not any(line["text"].strip() for line in lines):
+        result = {"ok":False,"source":"lrclib","found":False,"reason":"No valid timed lyrics in response"}
+        write_json(status_path,result)
+        return result
 
     lrc_path = lyrics_dir / "synced_lyrics.lrc"
     json_path = lyrics_dir / "synced_lyrics.json"
@@ -103,9 +96,9 @@ def fetch_synced_lyrics(project_dir: Path, review: dict[str, Any]) -> dict[str, 
     original_path = lyrics_dir / "lyrics_original.txt"
     candidate_path = sync_dir / "candidate_online_lrc_best.json"
 
-    lrc_path.write_text(lrc_text + "\n", encoding="utf-8")
-    lyrics_path.write_text(plain_text + "\n", encoding="utf-8")
-    original_path.write_text(plain_text + "\n", encoding="utf-8")
+    atomic_text(lrc_path, lrc_text + "\n")
+    atomic_text(lyrics_path, plain_text + "\n")
+    atomic_text(original_path, plain_text + "\n")
     write_json(json_path, {"source": "lrclib", "candidate": best, "lines": lines})
     write_json(candidate_path, {"source": "lrclib", "candidate": best, "lines": lines})
 
