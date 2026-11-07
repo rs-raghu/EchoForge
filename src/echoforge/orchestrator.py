@@ -7,13 +7,13 @@ from echoforge.stages.songscout.database import init_database, workflow_counts
 from echoforge.stages.songscout.policy import should_scrape_today
 
 WORKFLOW = [
-    "1. SongScout       - scrape chart only on Friday and select next unused song",
-    "2. ProjectBuilder  - create clean project folder/state files",
-    "3. MuseVault       - review metadata and collect audio/lyrics/images",
-    "4. VerseLock       - use existing synced lyrics or run full alignment",
-    "5. WebEditor       - open project for manual visual editing",
-    "6. Renderer        - render final lyrics video and upload thumbnail",
-    "7. TubeHarbor      - prepare metadata and upload/schedule",
+    "1. select_song    - scrape chart only on Friday and select next unused song",
+    "2. build_project  - create clean project folder/state files",
+    "3. collect_assets - review metadata and collect audio/lyrics/images",
+    "4. sync_align     - use existing synced lyrics or run full alignment",
+    "5. manual_editing - open project for manual visual editing",
+    "6. video_render   - render final lyrics video and upload thumbnail",
+    "7. upload_video   - prepare metadata and upload/schedule",
 ]
 
 
