@@ -5,6 +5,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from echoforge.musevault import collect_project_assets
 from echoforge.verselock import sync_project_lyrics
+from echoforge.renderer import render_project_video
+from echoforge.editor import run_editor_checkpoint
 from echoforge.paths import ensure_runtime_dirs
 from echoforge.songscout import (
     get_metadata,
@@ -104,6 +106,18 @@ def run_pipeline() -> None:
     print("=" * 55)
     sync_result = sync_project_lyrics(project_dir, song["id"])
     print(f"[+] STAGE 3 COMPLETE: Status = {sync_result['mode'].upper()} ({sync_result.get('line_count', 0)} lines)")
+
+    # WebEditor Checkpoint: Visual Review & Audio Trimming
+    run_editor_checkpoint(project_dir)
+
+    # 6. Stage 4: Renderer (Video Generation)
+    print("\n" + "=" * 55)
+    print("STAGE 4: Rendering Lyrics Video (Renderer)")
+    print("=" * 55)
+    video_path = render_project_video(project_dir, song["id"])
+    if video_path and video_path.exists():
+        size_mb = video_path.stat().st_size / (1024 * 1024)
+        print(f"[+] STAGE 4 COMPLETE: Video created -> {video_path.name} ({size_mb:.1f} MB)")
 
 
 if __name__ == "__main__":

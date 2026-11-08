@@ -14,3 +14,6 @@ projects/
 *.jpg
 *.png
 *.lrc
+
+# Preserve bundled assets
+!assets/**
