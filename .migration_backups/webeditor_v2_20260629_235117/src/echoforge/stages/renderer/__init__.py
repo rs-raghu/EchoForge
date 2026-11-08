@@ -1,1 +1,0 @@
-"""Renderer and WebEditor stage."""

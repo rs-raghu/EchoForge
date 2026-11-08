@@ -1,2 +1,14 @@
-# Supported CLI, renderer, Studio and uploader installation from this checkout.
--e .[studio,upload]
+# Core EchoForge Pipeline Dependencies
+playwright>=1.40.0
+yt-dlp>=2024.1.0
+Pillow>=10.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Stage 5: TubeHarbor YouTube Upload Dependencies
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+
+# Optional Stage 3: Offline Whisper Alignment (only if LRC is unsynced)
+# openai-whisper>=20231117

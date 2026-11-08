@@ -1,2 +1,0 @@
-# Optional model-backed transcription. Model downloads require network access.
--e .[whisper]
